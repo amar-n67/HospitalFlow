@@ -1,0 +1,8 @@
+.git
+.local
+**/App_Data
+**/appsettings.Local.json
+**/bin
+**/obj
+**/__pycache__
+*.pfx

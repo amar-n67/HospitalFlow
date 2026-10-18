@@ -1,0 +1,33 @@
+**/bin/
+**/obj/
+**/App_Data/
+.env
+.DS_Store
+*.user
+
+.local/
+**/appsettings.Local.json
+**/__pycache__/
+*.pfx
+
+# Additional environment files
+.env.*
+!.env.example
+!.env.sample
+
+# PostgreSQL database backups
+*.dump
+*.backup
+*.sql.gz
+pgdata/
+postgres_data/
+
+# Local secrets
+**/secrets.json
+
+# Logs
+logs/
+*.log
+
+# IDE files
+.idea/

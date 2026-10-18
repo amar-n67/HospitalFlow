@@ -1,0 +1,20 @@
+# Optional development database container only. For the configured local installation use scripts/local_database.py.
+# This file does not provision runtime grants, run migrations, or deploy the application.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: hospitalflow
+      POSTGRES_USER: hospitalflow_owner
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in your environment}
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - hospitalflow-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hospitalflow_owner -d hospitalflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  hospitalflow-data:
