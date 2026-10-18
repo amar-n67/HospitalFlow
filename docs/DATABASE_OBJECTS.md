@@ -5,14 +5,14 @@ Generated from the installed PostgreSQL metadata on `localhost:5432/hospitalflow
 | Object type | Count |
 | --- | --- |
 | EVENT TRIGGER | 2 |
-| FUNCTION | 37 |
-| INDEX | 130 |
+| FUNCTION | 38 |
+| INDEX | 136 |
 | MATERIALIZED VIEW | 1 |
 | POLICY | 4 |
 | PROCEDURE | 23 |
 | SEQUENCE | 5 |
-| TABLE | 68 |
-| TRIGGER | 92 |
+| TABLE | 72 |
+| TRIGGER | 97 |
 | TYPE | 2 |
 | VIEW | 14 |
 
@@ -511,6 +511,18 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | created_at | timestamp with time zone | NO | now() |
 
 
+### hospitalflow.patient_accounts
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| user_id | text | NO |  |
+| patient_id | text | NO |  |
+| must_change_password | boolean | NO | true |
+| temporary_expires_at | timestamp with time zone | NO |  |
+| invited_at | timestamp with time zone | NO | now() |
+| activated_at | timestamp with time zone | YES |  |
+
+
 ### hospitalflow.patient_consents
 
 | Column | Type | Nullable | Default |
@@ -536,6 +548,30 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | phone | text | NO |  |
 | is_emergency | boolean | NO | false |
 | created_at | timestamp with time zone | NO | now() |
+
+
+### hospitalflow.patient_login_challenges
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| token_hash | text | NO |  |
+| user_id | text | NO |  |
+| expires_at | timestamp with time zone | NO |  |
+| attempts | integer | NO | 0 |
+| consumed_at | timestamp with time zone | YES |  |
+| created_at | timestamp with time zone | NO | now() |
+
+
+### hospitalflow.patient_sms
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | uuid | NO | gen_random_uuid() |
+| user_id | text | NO |  |
+| encrypted_message | text | NO |  |
+| status | text | NO | 'Pending'::text |
+| created_at | timestamp with time zone | NO | now() |
+| completed_at | timestamp with time zone | YES |  |
 
 
 ### hospitalflow.patients
@@ -795,6 +831,15 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | permission | text | NO |  |
 
 
+### hospitalflow.user_preferences
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| user_id | text | NO |  |
+| theme | text | NO |  |
+| updated_at | timestamp with time zone | NO | now() |
+
+
 ### hospitalflow.users
 
 | Column | Type | Nullable | Default |
@@ -859,6 +904,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_security | audit | FUNCTION | p_action text, p_reference text | False |
 | hf_security | can_access_encounter | FUNCTION | p_encounter uuid | True |
 | hf_security | can_access_patient | FUNCTION | p_patient text | True |
+| hf_security | guard_patient_account | FUNCTION |  | True |
 | hf_security | protect_account | FUNCTION |  | False |
 | hf_security | require_actor | FUNCTION | p_roles text[] | True |
 | hospitalflow | complete_follow_up | FUNCTION |  | True |
@@ -966,6 +1012,8 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | notification_acknowledgements.immutable_ledger |
 | hospitalflow | notification_acknowledgements.record_history |
 | hospitalflow | patient_access_grants.record_history |
+| hospitalflow | patient_accounts.patient_link_guard |
+| hospitalflow | patient_accounts.record_history |
 | hospitalflow | patient_consents.record_history |
 | hospitalflow | patient_contacts.record_history |
 | hospitalflow | patients.enqueue_integration_event |
@@ -1007,7 +1055,10 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | suppliers.record_history |
 | hospitalflow | system_settings.record_history |
 | hospitalflow | user_departments.record_history |
+| hospitalflow | user_permissions.patient_grant_guard |
 | hospitalflow | user_permissions.record_history |
+| hospitalflow | user_preferences.record_history |
+| hospitalflow | users.patient_role_guard |
 | hospitalflow | users.protect_account |
 | hospitalflow | users.record_history |
 | hospitalflow | wards.record_history |
@@ -1179,6 +1230,11 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | patient_access_grants | patient_access_grants_pkey | PRIMARY KEY (id) |
 | hospitalflow | patient_access_grants | patient_access_grants_purpose_check | CHECK (((length(TRIM(BOTH FROM purpose)) >= 1) AND (length(TRIM(BOTH FROM purpose)) <= 200))) |
 | hospitalflow | patient_access_grants | patient_access_grants_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | patient_accounts | patient_accounts_check | CHECK (((must_change_password AND (activated_at IS NULL)) OR ((NOT must_change_password) AND (activated_at IS NOT NULL)))) |
+| hospitalflow | patient_accounts | patient_accounts_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
+| hospitalflow | patient_accounts | patient_accounts_patient_id_key | UNIQUE (patient_id) |
+| hospitalflow | patient_accounts | patient_accounts_pkey | PRIMARY KEY (user_id) |
+| hospitalflow | patient_accounts | patient_accounts_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | patient_consents | patient_consents_check | CHECK (((expires_at IS NULL) OR (expires_at > granted_at))) |
 | hospitalflow | patient_consents | patient_consents_check1 | CHECK (((revoked_at IS NULL) OR (revoked_at >= granted_at))) |
 | hospitalflow | patient_consents | patient_consents_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
@@ -1186,6 +1242,13 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | patient_consents | patient_consents_recorded_by_fkey | FOREIGN KEY (recorded_by) REFERENCES hospitalflow.users(id) |
 | hospitalflow | patient_contacts | patient_contacts_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | patient_contacts | patient_contacts_pkey | PRIMARY KEY (id) |
+| hospitalflow | patient_login_challenges | patient_login_challenges_attempts_check | CHECK (((attempts >= 0) AND (attempts <= 5))) |
+| hospitalflow | patient_login_challenges | patient_login_challenges_pkey | PRIMARY KEY (token_hash) |
+| hospitalflow | patient_login_challenges | patient_login_challenges_token_hash_check | CHECK ((length(token_hash) = 64)) |
+| hospitalflow | patient_login_challenges | patient_login_challenges_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.patient_accounts(user_id) |
+| hospitalflow | patient_sms | patient_sms_pkey | PRIMARY KEY (id) |
+| hospitalflow | patient_sms | patient_sms_status_check | CHECK ((status = ANY (ARRAY['Pending'::text, 'Local pickup'::text, 'Failed'::text]))) |
+| hospitalflow | patient_sms | patient_sms_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.patient_accounts(user_id) |
 | hospitalflow | patients | patients_dob_check | CHECK ((dob >= '1900-01-01'::date)) |
 | hospitalflow | patients | patients_name_check | CHECK (((length(name) >= 1) AND (length(name) <= 100))) |
 | hospitalflow | patients | patients_phone_check | CHECK (((length(phone) >= 7) AND (length(phone) <= 20))) |
@@ -1282,6 +1345,9 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | user_permissions | user_permissions_permission_check | CHECK ((permission = ANY (ARRAY['Reception'::text, 'Doctor'::text, 'Nurse'::text, 'Pharmacist'::text, 'Billing'::text]))) |
 | hospitalflow | user_permissions | user_permissions_pkey | PRIMARY KEY (user_id, permission) |
 | hospitalflow | user_permissions | user_permissions_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | user_preferences | user_preferences_pkey | PRIMARY KEY (user_id) |
+| hospitalflow | user_preferences | user_preferences_theme_check | CHECK ((theme = ANY (ARRAY['Default'::text, 'Dark'::text]))) |
+| hospitalflow | user_preferences | user_preferences_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | users | users_name_check | CHECK (((length(name) >= 1) AND (length(name) <= 100))) |
 | hospitalflow | users | users_pkey | PRIMARY KEY (id) |
 | hospitalflow | users | users_role_fkey | FOREIGN KEY (role) REFERENCES hospitalflow.roles(name) |

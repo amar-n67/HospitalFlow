@@ -34,9 +34,15 @@ Three roles are available: **User** with explicitly assigned operational permiss
 
 Use **Administration** for account approval, role/permission management, user creation and system health; use **Operations controls** for the expanded business workflows. Existing accounts and staff permissions were preserved. See [accounts and access](docs/ACCOUNTS_AND_ACCESS.md) for instructions and production mail settings.
 
+## Patient portal and appearance
+
+Registration by Admin/Developer or Doctor/Reception creates a linked patient account, automatic patient ID and protected email/SMS invitations. First login with the temporary password requires DOB verification and a new password before patient-only pages are accessible. Login then accepts email or patient ID. Local delivery files are in `.local/mail/` and `.local/sms/`, as requested. Existing patients can be enabled by adding their email through Edit.
+
+The application consistently uses port **5136**. Required inputs show `*`. Use the theme button or double-click anywhere to switch Default/Dark; signed-in preferences are stored in PostgreSQL. See the [patient portal guide](docs/PATIENT_PORTAL.md).
+
 ## Database structure
 
-Ten checksum-protected migrations create **68 tables, 23 procedures, 37 functions, 92 row triggers, 2 event triggers, 14 views, 1 materialized view, 4 row-security policies and 130 indexes**. `schema_versions` records checksums of applied migrations. `idempotency_hash_keys` holds the random key used to protect retry fingerprints.
+Eleven checksum-protected migrations create **72 tables, 23 procedures, 38 functions, 97 row triggers, 2 event triggers, 14 views, 1 materialized view, 4 row-security policies and 136 indexes**. `schema_versions` records checksums of applied migrations. `idempotency_hash_keys` holds the random key used to protect retry fingerprints.
 
 See the [enterprise database guide](docs/ENTERPRISE_DATABASE.md) and [installed object catalogue](docs/DATABASE_OBJECTS.md) for the complete inventory and transaction behavior. Main source locations:
 

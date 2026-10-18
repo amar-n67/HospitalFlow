@@ -1,0 +1,5 @@
+using Npgsql;
+sealed partial class Store {
+    public async Task<string?> UserTheme(string id){await using var c=await Open();await using var cmd=new NpgsqlCommand("SELECT theme FROM hospitalflow.user_preferences WHERE user_id=$1",c);cmd.Parameters.AddWithValue(id);return await cmd.ExecuteScalarAsync() as string;}
+    public async Task SaveTheme(string theme,AuditContext audit){if(theme is not("Default" or "Dark"))throw new RuleException("Choose Default or Dark theme.");await using var c=await Open();await using var tx=await c.BeginTransactionAsync();await Sql(c,tx,"SELECT set_config('hospitalflow.actor_id',$1,true),set_config('hospitalflow.correlation_id',$2,true)",audit.ActorId!,audit.CorrelationId);await Sql(c,tx,"INSERT INTO hospitalflow.user_preferences(user_id,theme) VALUES($1,$2) ON CONFLICT(user_id) DO UPDATE SET theme=EXCLUDED.theme,updated_at=now()",audit.ActorId!,theme);await new RowMap<Audit>("activity_log").Save(c,tx,[audit.Event("theme-change",theme)],[]);await tx.CommitAsync();}
+}

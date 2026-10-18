@@ -20,7 +20,7 @@ if __name__=='__main__':
             return result.stdout.strip()
         dll=str(ROOT/'HospitalFlow/bin/Debug/net10.0/HospitalFlow.dll')
         owner=f'Host=127.0.0.1;Port={dbport};Database=postgres;Username=hospitalflow_owner;Pooling=false'
-        env={**os.environ,'HOSPITALFLOW_ADMIN_PASSWORD':PASSWORD,'ASPNETCORE_ENVIRONMENT':'Development','ConnectionStrings__HospitalFlow':owner,'Database__SeedDemo':'true','Mail__PickupDirectory':folder+'/mail'}
+        env={**os.environ,'HOSPITALFLOW_ADMIN_PASSWORD':PASSWORD,'ASPNETCORE_ENVIRONMENT':'Development','ConnectionStrings__HospitalFlow':owner,'Database__SeedDemo':'true','Mail__PickupDirectory':folder+'/mail','Sms__PickupDirectory':folder+'/sms'}
         def launch(url,environment,tls_context=None):
             log=open(folder+f'/app-{len(processes)}.log','w+')
             p=subprocess.Popen(['dotnet',dll,'--urls',url,'--contentRoot',str(ROOT/'HospitalFlow')],env=environment,stdout=log,stderr=subprocess.STDOUT);processes.append((p,log))
@@ -104,6 +104,8 @@ if __name__=='__main__':
             assert sql("SELECT count(*) FROM hospitalflow.medicine_batches m WHERE quantity<>(SELECT sum(quantity) FROM hospitalflow.stock_movements WHERE medicine_id=m.id);",database='hospitalflow_recovery')=='0'
             from accounts import check_accounts
             check_accounts(base,sql,folder,Client,PASSWORD)
+            from patient_portal import check_patient_portal
+            check_patient_portal(base,sql,folder,Client,PASSWORD)
             # Disable user invalidates existing database session immediately.
             receptionist=Client(base);receptionist.login('reception')
             rid=next(u['id'] for u in c.request('/api/state')['users'] if 'Reception' in u['permissions'] and u['name']=='Reception Demo')

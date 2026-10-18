@@ -31,7 +31,7 @@ def run(base):
     c.request('/api/login',{'email':'administrator@hospitalflow.local','password':PASSWORD},400,False)
     c.request('/api/login',{'email':None,'password':None},401)
     c.login();s=c.request('/api/state');assert len(s['patients'])==8
-    p={'name':'Synthetic Test Patient','dob':'1993-03-08','sex':'Female','phone':'9000012345'}
+    p={'name':'Synthetic Test Patient','dob':'1993-03-08','sex':'Female','phone':'9000012345','email':'synthetic.patient@example.test'}
     c.action('patient',p);c.action('patient',p,409)
     c.action('patient',{**p,'name':'Invalid','dob':'2999-01-01'},409)
     pid=next(p['id'] for p in c.request('/api/state')['patients'] if p['name']=='Synthetic Test Patient')

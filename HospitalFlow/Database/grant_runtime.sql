@@ -26,3 +26,6 @@ GRANT EXECUTE ON FUNCTION hf_ops.validate_database() TO hospitalflow_app;
 GRANT SELECT,INSERT,UPDATE ON hospitalflow.account_tokens,hospitalflow.account_mail TO hospitalflow_app;
 GRANT SELECT,INSERT,DELETE ON hospitalflow.user_permissions TO hospitalflow_app;
 GRANT EXECUTE ON FUNCTION hf_security.protect_account() TO hospitalflow_app;
+GRANT SELECT,INSERT,UPDATE ON hospitalflow.patient_accounts,hospitalflow.patient_login_challenges,hospitalflow.patient_sms TO hospitalflow_app;
+GRANT EXECUTE ON FUNCTION hf_security.guard_patient_account() TO hospitalflow_app;
+GRANT SELECT,INSERT,UPDATE ON hospitalflow.user_preferences TO hospitalflow_app;

@@ -39,7 +39,7 @@ static class AccountEndpoints {
         }).RequireAuthorization();
         app.MapGet("/api/admin/health",async(HttpContext ctx)=>{
             if(!Access.Full(ctx.User.FindFirstValue(ClaimTypes.Role)))return Results.Forbid();
-            await using var c=await store.Open();await using var cmd=new Npgsql.NpgsqlCommand("SELECT jsonb_build_object('checks',(SELECT jsonb_agg(v) FROM hf_ops.validate_database() v),'mail',(SELECT jsonb_build_object('pending',count(*) FILTER(WHERE status='Pending'),'failed',count(*) FILTER(WHERE status='Failed')) FROM hospitalflow.account_mail))::text",c);
+            await using var c=await store.Open();await using var cmd=new Npgsql.NpgsqlCommand("SELECT jsonb_build_object('checks',(SELECT jsonb_agg(v) FROM hf_ops.validate_database() v),'mail',(SELECT jsonb_build_object('pending',count(*) FILTER(WHERE status='Pending'),'failed',count(*) FILTER(WHERE status='Failed')) FROM hospitalflow.account_mail),'sms',(SELECT jsonb_build_object('pending',count(*) FILTER(WHERE status='Pending'),'localPickup',count(*) FILTER(WHERE status='Local pickup'),'failed',count(*) FILTER(WHERE status='Failed')) FROM hospitalflow.patient_sms))::text",c);
             return Results.Text((string)(await cmd.ExecuteScalarAsync())!,"application/json");
         }).RequireAuthorization();
     }

@@ -1,8 +1,8 @@
 # HospitalFlow enterprise database foundation
 
-The installed database is `hospitalflow` on `localhost:5432`, on the existing PostgreSQL server. Existing business records were preserved and compared against a protected pre-migration snapshot. No other database was migrated. Ten ordered migrations are recorded with SHA-256 checksums; applied migrations must never be edited.
+The installed database is `hospitalflow` on `localhost:5432`, on the existing PostgreSQL server. Existing business records were preserved and compared against a protected pre-migration snapshot. No other database was migrated. Eleven ordered migrations are recorded with SHA-256 checksums; applied migrations must never be edited.
 
-The installed catalogue contains **68 tables, 23 procedures, 37 functions, 92 row triggers, 2 event triggers, 14 views, 1 materialized view, 4 row-security policies, 130 indexes, 5 sequences and 2 enum types**. See [every object, column, constraint and routine signature](DATABASE_OBJECTS.md).
+The installed catalogue contains **72 tables, 23 procedures, 38 functions, 97 row triggers, 2 event triggers, 14 views, 1 materialized view, 4 row-security policies, 136 indexes, 5 sequences and 2 enum types**. See [every object, column, constraint and routine signature](DATABASE_OBJECTS.md).
 
 ## Find inventory in pgAdmin
 

@@ -2,7 +2,7 @@
 
 The application requires PostgreSQL; no runtime data is saved to JSON files. Migrations are embedded in the compiled assembly, applied in order under a transaction lock and checked by checksum on subsequent runs. Editing an already applied migration is rejected; add a new numbered migration instead.
 
-The expanded database now contains 68 tables across business and operations schemas. The [enterprise guide](ENTERPRISE_DATABASE.md) describes the additional modules, procedures, security and schedules; the [installed catalogue](DATABASE_OBJECTS.md) lists every object and column. The table below summarises the original core.
+The expanded database now contains 72 tables across business and operations schemas. The [enterprise guide](ENTERPRISE_DATABASE.md) describes the additional modules, procedures, security and schedules; the [installed catalogue](DATABASE_OBJECTS.md) lists every object and column. The table below summarises the original core.
 
 ## Relational tables
 

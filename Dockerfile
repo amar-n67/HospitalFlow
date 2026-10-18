@@ -8,7 +8,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=build /out .
 ENV ASPNETCORE_ENVIRONMENT=Production
-ENV ASPNETCORE_URLS=https://+:8443
+ENV ASPNETCORE_URLS=https://+:5136
 USER $APP_UID
-EXPOSE 8443
+EXPOSE 5136
 ENTRYPOINT ["dotnet", "HospitalFlow.dll"]

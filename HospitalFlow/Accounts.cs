@@ -70,6 +70,7 @@ sealed partial class Store {
     public async Task ManageAccount(AccountInfo input,AuditContext audit) {
         if(input.Id==audit.ActorId)throw new RuleException("Ask another administrator to change your own role or access.");
         if(input.Role is not ("User" or "Admin" or "Developer")||input.Permissions.Any(p=>!Access.Permissions.Contains(p)))throw new RuleException("Choose a valid role and permissions.");
+        if(await PatientAccount(input.Id)!=null&&(input.Role!="User"||input.Permissions.Length>0))throw new RuleException("Patient accounts cannot receive staff access. Use a separate staff identity.");
         await using var c=await Open();await using var tx=await c.BeginTransactionAsync();
         await Sql(c,tx,"SELECT pg_advisory_xact_lock(74192301),set_config('hospitalflow.actor_id',$1,true),set_config('hospitalflow.correlation_id',$2,true)",audit.ActorId!,audit.CorrelationId);
         await Sql(c,tx,"SELECT hf_security.require_actor(ARRAY[]::text[])");

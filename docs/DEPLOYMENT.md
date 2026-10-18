@@ -46,7 +46,7 @@ Then apply `HospitalFlow/Database/grant_operations.sql` and `HospitalFlow/Databa
 | `Security__KeyEncryptionCertificatePassword` | PFX password from the secret manager |
 | `Kestrel__Certificates__Default__Path` | HTTPS PFX path when Kestrel terminates HTTPS |
 | `Kestrel__Certificates__Default__Password` | HTTPS certificate password |
-| `ASPNETCORE_URLS` | HTTPS binding, for example `https://+:8443` |
+| `ASPNETCORE_URLS` | HTTPS binding, for example `https://+:5136` |
 
 The supplied Dockerfile publishes .NET 10 and runs as the image's non-root application user. Mount certificates read-only and expose the HTTPS listener through your deployment network. It contains no database or local credentials. It has not been deployed to an external host during this task.
 
@@ -89,3 +89,9 @@ Run `python3 scripts/configure_jobs.py status` to inspect schedules, `python3 sc
 ## Account email delivery
 
 Production now also requires `Accounts__PublicOrigin` (public HTTPS origin), `Mail__From` and `Mail__Smtp__Host`; optional port/username/password settings are described in [accounts and access](ACCOUNTS_AND_ACCESS.md). The local installation deliberately uses private development email files, as requested. Production will not fall back to those files.
+
+## Patient invitations and fixed port
+
+Standard web bindings use port **5136**, including the production container. Both local launch profiles explicitly bind that port; HTTPS requires its certificate and cannot run beside HTTP on the same port. Set `Accounts__PublicOrigin` to the actual public HTTPS origin so emailed links target the deployed service. Automated tests alone use explicit temporary bindings.
+
+Patient email/SMS invitations are protected in PostgreSQL. Development uses owner-only `.local/mail/` and `.local/sms/` transport files. SMS has no external-provider adapter yet and remains pending in Production; it is never reported as delivered. See [patient access](PATIENT_PORTAL.md).

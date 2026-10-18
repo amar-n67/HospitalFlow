@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.DataProtection;
 using Npgsql;
 
 sealed partial class Store : IDisposable
@@ -145,7 +146,7 @@ sealed partial class Store : IDisposable
         await new RowMap<Note>("notes").Save(c,tx,s.Notes,old.Notes);
         await new RowMap<Audit>("activity_log").Save(c,tx,s.Audit,old.Audit);
     }
-    public async Task<string> Change(string action,JsonElement payload,AuditContext audit,string? key,string requestHash)
+    public async Task<string> Change(string action,JsonElement payload,AuditContext audit,string? key,string requestHash,IDataProtectionProvider? protection=null)
     {
         if(!Guid.TryParse(key,out var keyId))throw new RuleException("A valid Idempotency-Key header is required for changes.");
         if(action=="user") {
@@ -159,11 +160,19 @@ sealed partial class Store : IDisposable
             fields["passwordHash"]=JsonSerializer.SerializeToElement(new PasswordHasher<User>().HashPassword(new User(),password.GetString()!));
             payload=JsonSerializer.SerializeToElement(fields);
         }
+        string? patientEmail=null;
+        if(action=="patient"||(action=="patient-update"&&payload.TryGetProperty("email",out _))) {
+            if(!payload.TryGetProperty("email",out var emailValue)||emailValue.ValueKind!=JsonValueKind.String)throw new RuleException("Patient email is required for patient access.");
+            patientEmail=AccountValidation.Email(emailValue.GetString()!);
+            if(protection==null)throw new InvalidOperationException("Patient invitation protection is required.");
+        }
         await using var c=await Open();await using var tx=await c.BeginTransactionAsync();
         await Sql(c,tx,"SELECT set_config('hospitalflow.actor_id',$1,true),set_config('hospitalflow.correlation_id',$2,true)",audit.ActorId??"",audit.CorrelationId);
         await using var cmd=new NpgsqlCommand("SELECT hf_api.execute($1,$2::jsonb,$3,$4)",c,tx);
         cmd.Parameters.AddWithValue(action);cmd.Parameters.AddWithValue(payload.GetRawText());cmd.Parameters.AddWithValue(keyId);cmd.Parameters.AddWithValue(requestHash);
-        var reference=(string)(await cmd.ExecuteScalarAsync())!;await tx.CommitAsync();return reference;
+        var reference=(string)(await cmd.ExecuteScalarAsync())!;
+        if(patientEmail!=null)await ProvisionPatient(c,tx,reference,patientEmail,protection!.CreateProtector("HospitalFlow.AccountMail.v1"),protection.CreateProtector("HospitalFlow.PatientSms.v1"),audit);
+        await tx.CommitAsync();return reference;
     }
     public async Task Log(Audit entry)
     {
