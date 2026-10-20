@@ -26,6 +26,17 @@ sealed partial class Store {
         }else if(kind=="invoice"){
             var b=s.Bills.FirstOrDefault(b=>b.Id==id);if(b==null)return null;patientId=b.PatientId;title="Invoice and payment receipts";
             details="<table><tr><th>Description</th><th>Amount</th></tr>"+string.Concat(b.Lines.Select(l=>$"<tr><td>{E(l.Description)}</td><td>{E(Money(l.Amount))}</td></tr>"))+Row("Total",Money(b.Total))+Row("Paid",Money(b.Paid))+Row("Balance",Money(b.Balance))+"</table><h2>Payment receipts</h2><table><tr><th>Reference</th><th>Date</th><th>Method</th><th>Amount</th></tr>"+string.Concat(b.Payments.Select(p=>$"<tr><td>{E(p.Id)}</td><td>{E(At(p.At))}</td><td>{E(p.Method)}</td><td>{E(Money(p.Amount))}</td></tr>"))+"</table><p>This is a copy of recorded charges and payments, not proof of any unrecorded payment.</p>";
+        }else if(kind=="discharge-summary"){
+            var a=s.Admissions.FirstOrDefault(a=>a.Id==id);if(a==null)return null;patientId=a.PatientId;title="Discharge summary";
+            await using var c=await Open();await using var cmd=new NpgsqlCommand("SELECT (to_jsonb(r)||jsonb_build_object('doctor_name',d.name,'nurse_name',n.name))::text FROM hospitalflow.care_discharge_reviews r JOIN hospitalflow.users n ON n.id=r.nurse_id LEFT JOIN hospitalflow.users d ON d.id=r.doctor_id WHERE r.admission_id=$1 AND r.hospital_id=hf_security.current_hospital() AND hf_security.can_read_care(r.patient_id)",c);cmd.Parameters.AddWithValue(id);
+            var raw=await cmd.ExecuteScalarAsync() as string;if(raw==null)return null;var review=System.Text.Json.JsonDocument.Parse(raw).RootElement;
+            string Value(string key)=>review.TryGetProperty(key,out var v)&&v.ValueKind!=System.Text.Json.JsonValueKind.Null?v.ToString():"Awaiting review";
+            details="<table>"+Row("Admission",id)+Row("Admission date",At(a.At))+Row("Discharged",a.Discharged is {} when?At(when):"Not finalized")+Row("Doctor",Value("doctor_name"))+Row("Doctor approval timestamp",Value("approved_at"))+Row("Nurse",Value("nurse_name"))+Row("Nurse preparation timestamp",Value("prepared_at"))+Row("Nurse completion timestamp",Value("completed_at"))+"</table>";
+            foreach(var key in new[]{"diagnosis","treatment","final_condition","discharge_medications","follow_up","doctor_remarks","nurse_remarks"})details+="<h2>"+E(key.Replace('_',' '))+"</h2><p class='instructions'>"+E(Value(key))+"</p>";
+            await using var medications=new NpgsqlCommand("SELECT m.name,d.dose,d.quantity,d.status,d.actual_at,u.name,d.remarks FROM hospitalflow.medication_doses d JOIN hospitalflow.prescriptions p ON p.id=d.prescription_id JOIN hospitalflow.medicine_batches m ON m.id=p.medicine_id LEFT JOIN hospitalflow.users u ON u.id=d.recorded_by WHERE d.admission_id=$1 ORDER BY d.scheduled_at",c);medications.Parameters.AddWithValue(id);
+            details+="<h2>Medication administration record</h2><table><tr><th>Medicine / dose</th><th>Quantity / outcome</th><th>Actual administration / nurse</th><th>Remarks</th></tr>";
+            await using(var r=await medications.ExecuteReaderAsync()){while(await r.ReadAsync())details+="<tr><td>"+E(r.GetString(0))+"<br>"+E(r.GetString(1))+"</td><td>"+r.GetInt32(2)+" · "+E(r.GetString(3))+"</td><td>"+(r.IsDBNull(4)?"—":E(At(new DateTimeOffset(r.GetDateTime(4),TimeSpan.Zero))))+"<br>"+(r.IsDBNull(5)?"—":E(r.GetString(5)))+"</td><td>"+(r.IsDBNull(6)?"—":E(r.GetString(6)))+"</td></tr>";}
+            details+="</table><p>This copy reflects the recorded approval/finalization state when generated.</p>";
         }else{
             var a=s.Admissions.FirstOrDefault(a=>a.Id==id);if(a==null)return null;patientId=a.PatientId;title="Admission record";
             details="<table>"+Row("Admission",a.Id)+Row("Admitted",At(a.At))+Row("Bed",a.BedId)+Row("Status",a.Status)+Row("Discharged",a.Discharged is {} end?At(end):"Not discharged")+"</table>";
@@ -39,7 +50,7 @@ sealed partial class Store {
 static class RecordDocumentEndpoints {
     public static void Map(WebApplication app,Store store){
         app.MapGet("/api/documents/{kind}/{id}",async(string kind,string id,string? mode,HttpContext ctx)=>{
-            if(kind is not("appointment" or "prescription" or "invoice" or "admission")||id.Length>100)return Results.NotFound();
+            if(kind is not("appointment" or "prescription" or "invoice" or "admission" or "discharge-summary")||id.Length>100)return Results.NotFound();
             if(mode is not("print" or "download"))return Results.BadRequest();
             var userId=ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!;var patient=await store.PatientAccount(userId)!=null;
             if(!patient&&!Access.Full(ctx.User.FindFirstValue(ClaimTypes.Role))){

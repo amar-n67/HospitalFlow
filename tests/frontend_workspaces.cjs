@@ -1,7 +1,8 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
+const asset=file=>'HospitalFlow/wwwroot/js/'+(['app.js','dialogs.js','theme.js','validation.js'].includes(file)?'core/':'features/')+file;
 const ctx={console,URL,Blob,setInterval:()=>{},document:{addEventListener(){},querySelectorAll:()=>[]},me:{},state:{},page:'dashboard',menus:[]};
 vm.createContext(ctx);
-for(const file of ['medications.js','validation.js','workspaces.js','documents.js','overview.js'])vm.runInContext(fs.readFileSync('HospitalFlow/wwwroot/'+file,'utf8'),ctx);
+for(const file of ['medications.js','validation.js','workspaces.js','documents.js','overview.js'])vm.runInContext(fs.readFileSync(asset(file),'utf8'),ctx);
 vm.runInContext(`
 var esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 var stats=rows=>rows.map(r=>r.join(' ')).join(' '),panel=(a,b,c,d='')=>a+b+c+d,table=(h,r)=>h.join(' ')+r.flat().join(' '),heading=(a,b)=>a+b;
@@ -18,7 +19,7 @@ for(const role of ['Admin','Doctor','Nurse','Volunteer','User']){ctx.role=role;v
 vm.runInContext("me={name:'Billing',role:'User',permissions:['Billing'],profile:{}}",ctx);assert.match(vm.runInContext('roleOverview()',ctx),/Invoices awaiting payment/);
 assert.doesNotMatch(vm.runInContext('roleOverview()',ctx),/Today’s visit queue/);
 console.log('PASS: patient/staff/nurse/volunteer overview rendering, billing-specific priorities, document buttons and mobile validation.');
-vm.runInContext(fs.readFileSync('HospitalFlow/wwwroot/network.js','utf8'),ctx);
+vm.runInContext(fs.readFileSync(asset('network.js'),'utf8'),ctx);
 vm.runInContext(`
 var matches=()=>true,toolbar=()=>'',option=(v,t)=>'<option>'+t+'</option>';
 me={role:'Doctor',permissions:['Doctor'],name:'Colleague',canManageNetwork:false};
@@ -31,7 +32,7 @@ assert.match(vm.runInContext('historyTree(tree)',ctx),/Example B/);
 assert.match(vm.runInContext('historyTree(tree)',ctx),/&lt;script&gt;/);
 vm.runInContext("me={role:'Nurse',permissions:['Nurse']}",ctx);assert.equal(vm.runInContext("historyDocumentAllowed('Invoice')",ctx),false);
 console.log('PASS: hospital directory, referral controls, retained history tree, HTML escaping and document permissions.');
-vm.runInContext(fs.readFileSync('HospitalFlow/wwwroot/booking.js','utf8'),ctx);
+vm.runInContext(fs.readFileSync(asset('booking.js'),'utf8'),ctx);
 vm.runInContext(`
 heading=(...args)=>args.join(' ');
 me={id:'patient-user',patientId:'p',role:'User'};
@@ -56,11 +57,11 @@ vm.runInContext("state.leaveCalendar={hospitalName:'<script>bad</script>',leaves
 const leaveHtml=vm.runInContext('hospitalLeavePage()',ctx);assert.match(leaveHtml,/On leave until/);assert.match(leaveHtml,/3 day/);assert.match(leaveHtml,/&lt;b&gt;Colleague/);assert.doesNotMatch(leaveHtml,/<script>|<b>Colleague/);
 console.log('PASS: shared hospital leave calendar, inclusive leave dates and escaped staff/hospital names.');
 
-const accessCtx={me:{role:'Admin',permissions:[]}};vm.createContext(accessCtx);const appSource=fs.readFileSync('HospitalFlow/wwwroot/app.js','utf8');for(const name of ['fullAccess','canClinical','can']){const definition=appSource.split('\n').find(line=>line.startsWith('const '+name+'='));assert.ok(definition);vm.runInContext(definition,accessCtx);}
+const accessCtx={me:{role:'Admin',permissions:[]}};vm.createContext(accessCtx);const appSource=fs.readFileSync(asset('app.js'),'utf8');for(const name of ['fullAccess','canClinical','can']){const definition=appSource.split('\n').find(line=>line.startsWith('const '+name+'='));assert.ok(definition);vm.runInContext(definition,accessCtx);}
 assert.equal(vm.runInContext('fullAccess()',accessCtx),true);assert.equal(vm.runInContext('canClinical(["Doctor"])',accessCtx),false);
 accessCtx.me={role:'Doctor',permissions:['Doctor']};assert.equal(vm.runInContext('canClinical(["Doctor"])',accessCtx),true);assert.equal(vm.runInContext('fullAccess()',accessCtx),false);
 accessCtx.me={role:'Developer',permissions:[]};assert.equal(vm.runInContext('canClinical(["Doctor"])',accessCtx),true);assert.equal(vm.runInContext('fullAccess()',accessCtx),true);
-vm.runInContext(fs.readFileSync('HospitalFlow/wwwroot/operations.js','utf8'),accessCtx);accessCtx.me={role:'Admin'};assert.equal(vm.runInContext('availableOperations().some(o=>o[0]==="clinical-order")',accessCtx),false);accessCtx.me={role:'Developer'};assert.equal(vm.runInContext('availableOperations().some(o=>o[0]==="clinical-order")',accessCtx),true);
+vm.runInContext(fs.readFileSync(asset('operations.js'),'utf8'),accessCtx);accessCtx.me={role:'Admin'};assert.equal(vm.runInContext('availableOperations().some(o=>o[0]==="clinical-order")',accessCtx),false);accessCtx.me={role:'Developer'};assert.equal(vm.runInContext('availableOperations().some(o=>o[0]==="clinical-order")',accessCtx),true);
 console.log('PASS: Admin management versus Doctor clinical controls, with Developer access to both.');
 vm.runInContext(appSource.split('\n').find(line=>line.startsWith('const pageAccess=')),accessCtx);
 accessCtx.me={role:'Nurse',permissions:['Nurse']};assert.equal(vm.runInContext('pageAccess("hospitals")',accessCtx),false);assert.equal(vm.runInContext('pageAccess("referrals")',accessCtx),false);assert.equal(vm.runInContext('pageAccess("clinical")',accessCtx),true);
@@ -86,3 +87,9 @@ vm.runInContext("me={role:'Doctor',permissions:['Doctor']};state.medicines=[];st
 assert.equal(vm.runInContext('capturedModal.action',ctx),'visit-prescription');assert.match(vm.runInContext('capturedModal.html',ctx),/name="medicineId"/);assert.match(vm.runInContext('capturedModal.html',ctx),/P-001/);assert.equal(vm.runInContext('typeof modalForm.onsubmit',ctx),'function');
 assert.ok(appSource.includes("if(action==='appointment-status'&&el.dataset.extra==='In consultation')openVisitPrescription(id)"));
 console.log('PASS: Start visit opens Admin read-only history and assigned Doctor prescription form; existing visits can reopen the dialog.');
+vm.runInContext(fs.readFileSync(asset('care-flow.js'),'utf8'),ctx);
+vm.runInContext(`state.careFlow={patients:[{id:'p',name:'<b>Patient</b>',code:'P-001'}],plans:[{id:'PLAN',patient_id:'p',doctor_id:'doctor',doctor_name:'Doctor',nurse_id:null,nurse_name:null,planned_days:5,status:'Requested',diagnosis:'<script>test</script>',instructions:'Treatment'}],admissions:[],observations:[{patient_id:'p',at:'2026-10-20T10:00:00Z',health_status:'<img src=x>',vitals:{pulseBpm:70},progress:'Progress',notes:'Notes',nurse_name:'Nurse'}],doses:[],discharges:[],events:[{patient_id:'p',activity:'Consultation',actor_name:'Doctor',at:'2026-10-20',comments:'<script>note</script>'}],charges:[{patient_id:'p',amount:100,category:'Bed',day:'2026-10-20',description:'Bed charge',invoice:'INV-1'}],rates:[],staff:[],pharmacyRequests:[],encounters:[],services:[],orders:[]};me={id:'doctor',role:'Doctor',permissions:['Doctor']};selectedCarePatient='p';`,ctx);
+const doctorCare=vm.runInContext('careFlowPage()',ctx);assert.match(doctorCare,/Request \/ link admission/);assert.match(doctorCare,/Prescribe medicines/);assert.match(doctorCare,/Complete activity timeline/);assert.match(doctorCare,/&lt;script&gt;test/);assert.doesNotMatch(doctorCare,/<script>|<img src=x>/);
+vm.runInContext("me={id:'nurse',role:'Nurse',permissions:['Nurse']}",ctx);const nurseCare=vm.runInContext('careFlowPage()',ctx);assert.match(nurseCare,/Accept patient/);assert.doesNotMatch(nurseCare,/Request \/ link admission/);
+vm.runInContext("me={id:'user',role:'User',patientId:'p',permissions:[]}",ctx);const patientCare=vm.runInContext('careFlowPage()',ctx);assert.match(patientCare,/My care timeline/);assert.match(patientCare,/Date-wise charges/);assert.doesNotMatch(patientCare,/Request \/ link admission|Accept patient|Configure daily ward rates/);
+console.log('PASS: complete care page renders role-specific admission controls, patient timeline/charges and escaped clinical content.');

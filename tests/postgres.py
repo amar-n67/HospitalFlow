@@ -42,6 +42,28 @@ if __name__=='__main__':
             runtime=owner.replace('Username=hospitalflow_owner','Username=hospitalflow_app')
             runtime_env={**env,'ConnectionStrings__HospitalFlow':runtime,'Database__SeedDemo':'false'}
             p=launch(base,runtime_env)
+            # Verify relocated public assets through the real static-file middleware.
+            import re, urllib.request
+            with urllib.request.urlopen(base+'/') as response:
+                shell=response.read().decode()
+            assets=re.findall(r'(?:src|href)="(/(?:js|css)/[^"?#]+)"',shell)
+            assert len(set(assets))==15,assets
+            for asset in assets:
+                with urllib.request.urlopen(base+asset) as response:
+                    assert response.status==200 and response.read(),asset
+                    expected='javascript' if asset.endswith('.js') else 'text/css'
+                    assert expected in response.headers.get('Content-Type',''),asset
+            print('PASS: organized JavaScript/CSS assets are served by the running application.')
+            if '--care-only' in sys.argv:
+                fixture=Client(base);fixture.login()
+                common={'mobile':'9000077555','dob':'1985-01-02','sex':'Other','department':'General Medicine','jobTitle':'Clinical fixture','password':'Cedar!928'}
+                fixture.register_staff({**common,'name':'Booking Test Clinician','email':'booking.doctor@example.test','role':'Doctor','start':'09:00','end':'17:00'})
+                fixture.register_staff({**common,'name':'Other Care Nurse','email':'registered.nurse@example.test','role':'Nurse'})
+                uid=fixture.action('user',{'name':'Synthetic Pharmacy Operator','email':'visit.pharmacy@example.test','role':'User','password':'Cedar!928'})['reference']
+                fixture.request('/api/admin/account',{'id':uid,'role':'User','active':True,'permissions':['Pharmacist']})
+                from care_flow import check_care_flow
+                check_care_flow(base,sql,Client)
+                sys.exit(0)
             run(base)
             c=Client(base);c.login()
             assert c.request('/api/health')['storage']=='PostgreSQL · relational'
@@ -130,6 +152,8 @@ if __name__=='__main__':
             check_first_login(base,sql,Client)
             from visit_prescriptions import check_visit_prescriptions
             check_visit_prescriptions(base,sql,Client)
+            from care_flow import check_care_flow
+            check_care_flow(base,sql,Client)
             # Disable user invalidates existing database session immediately.
             receptionist=Client(base);receptionist.login('reception')
             rid=next(u['id'] for u in c.request('/api/state')['users'] if 'Reception' in u['permissions'] and u['name']=='Reception Demo')

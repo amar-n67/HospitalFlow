@@ -17,7 +17,7 @@ dotnet build HospitalFlow
 python3 scripts/local_database.py migrate
 ```
 
-The original file import used `--import-legacy HospitalFlow/App_Data/hospitalflow.json`. Do not repeat the import into a populated database. The later move to port 5432 used a full schema backup/restore and verified every table row-for-row before switching the connection.
+The original file import used a legacy JSON snapshot. That inactive snapshot is now privately archived under `.local/archive/legacy-json/`; it is not an application data source or part of the published application. Do not repeat the import into a populated database. The later move to port 5432 used a full schema backup/restore and verified every table row-for-row before switching the connection.
 
 ## Provision a separate production database
 

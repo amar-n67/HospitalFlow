@@ -32,3 +32,9 @@ Doctor 1 has an existing booking during approved leave on 23 October, allowing t
 | Kabir Deshmukh · P-001103 | Sana Mirza / Neha Sinha | APT-10225 | APT-10236 | ADM-10235 (active) | RX-10226 | RX-10227 (pending) | INV-10230 | INV-10233 |
 
 Refresh the application to reload the database records. Start with People & registrations, then Appointments, Clinical workspace, Nursing workspace, Pharmacy, Billing, Attendance & leave, and Work assignments. Role permissions remain enforced. The maintenance seed records a completion marker and refuses to add duplicate scenarios on repeat runs.
+
+## Complete care pathway examples
+
+Migration 025 links the three active stays for Vivaan Shah, Ishita Rao and Kabir Deshmukh to Doctor admission orders, structured Nurse observations, scheduled medication doses and Patient pharmacy requests. Open **Patient care pathway** and select one of these patients. Patients can use **Care timeline & hospital stay** to view their own records.
+
+These are explicitly fictional examples. No medication outcome or discharge approval was invented. The two previously discharged stays retain their original history. Admin must configure dated ward rates and laboratory service prices before the corresponding automatic or final billing can proceed. See [Complete care workflow](COMPLETE_CARE_FLOW.md) for the role-specific steps.

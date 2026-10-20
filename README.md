@@ -46,14 +46,14 @@ The application consistently uses port **5136**. Required inputs show `*`. Use t
 
 ## Database structure
 
-Fifteen checksum-protected migrations create **80 tables, 23 procedures, 51 functions, 157 row triggers, 2 event triggers, 14 views, 1 materialized view, 51 row-security policies and 200 indexes**. `schema_versions` records checksums of applied migrations. `idempotency_hash_keys` holds the random key used to protect retry fingerprints.
+Twenty-five checksum-protected migrations define the relational database. See the installed object catalogue for current object counts. `schema_versions` records checksums of applied migrations. `idempotency_hash_keys` holds the random key used to protect retry fingerprints.
 
-See the [enterprise database guide](docs/ENTERPRISE_DATABASE.md) and [installed object catalogue](docs/DATABASE_OBJECTS.md) for the complete inventory and transaction behavior. Main source locations:
+See the [enterprise database guide](docs/ENTERPRISE_DATABASE.md) and [installed object catalogue](docs/DATABASE_OBJECTS.md) for the complete inventory and transaction behavior. See the [project structure and data storage guide](docs/PROJECT_STRUCTURE.md) for the feature layout and persistence rules. Main source locations:
 
 - `HospitalFlow/Database/Migrations/`: ordered, embedded SQL migrations.
 - `HospitalFlow/Database/RowMap.cs`: typed relational row mapping and parameterized SQL.
 - `HospitalFlow/Database/DbSecurity.cs`: database-backed authentication sessions and data-protection key repository.
-- `HospitalFlow/Store.cs`: transactional persistence, imports, idempotency, authentication state and alerts.
+- `HospitalFlow/Infrastructure/Persistence/Store.cs`: transactional persistence, imports, idempotency, authentication state and alerts.
 - `HospitalFlow/Program.cs`: HTTP security, request auditing and authorized endpoints.
 - `hf_api.execute` in the SQL migrations: transaction gateway and linked business procedures.
 - `HospitalFlow/Database/grant_runtime.sql`: privileges for the restricted runtime account.
@@ -81,7 +81,9 @@ Requires .NET SDK 10, Python 3 and local PostgreSQL `initdb`, `pg_ctl`, `psql`, 
 ```sh
 dotnet restore HospitalFlow
 dotnet build HospitalFlow --no-restore
-node --check HospitalFlow/wwwroot/app.js
+node --check HospitalFlow/wwwroot/js/core/app.js
+node tests/frontend_workspaces.cjs
+node tests/frontend_persistence.cjs
 python3 tests/postgres.py
 python3 scripts/database_report.py
 ```
@@ -117,3 +119,5 @@ Personal workspaces: [patient, nurse and volunteer pages, contact editing, verif
 Appointment booking and staff attendance: see [the workflow guide](docs/APPOINTMENTS_AND_ATTENDANCE.md) for 10-minute slots, the two-hour cutoff, ₹200–₹750 fees, local test payments, cash refunds and doctor leave warnings.
 
 Admin and Doctor are separate roles: see [the role guide](docs/ADMIN_AND_DOCTOR_ROLES.md) for management, clinical authoring and Developer access.
+
+The [Patient care pathway](docs/COMPLETE_CARE_FLOW.md) covers Doctor admission orders, Nurse acceptance/bed assignment, scheduled medication outcomes, daily monitoring, pharmacy requests, versioned ward charges, patient timelines and staged discharge approval.

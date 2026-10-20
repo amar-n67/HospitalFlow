@@ -1,11 +1,12 @@
 'use strict';
 function applyTheme(theme,notify=false){
  theme=theme==='Dark'?'Dark':'Default';document.documentElement.dataset.theme=theme;
- try{localStorage.setItem('hospitalflow.theme',theme);}catch{}
  const button=document.getElementById('theme-toggle');if(button){button.textContent=theme==='Dark'?'☀ Default':'☾ Dark';button.setAttribute('aria-pressed',String(theme==='Dark'));}
  if(notify)document.dispatchEvent(new CustomEvent('hospitalflow:theme-changed',{detail:theme}));
 }
-try{applyTheme(localStorage.getItem('hospitalflow.theme'));}catch{applyTheme('Default');}
+// Signed-in preferences are loaded from PostgreSQL by /api/me.
+// Before sign-in, the theme is temporary and lasts only for this page.
+applyTheme('Default');
 function toggleTheme(){applyTheme(document.documentElement.dataset.theme==='Dark'?'Default':'Dark',true);}
 document.addEventListener('dblclick',toggleTheme);
 document.addEventListener('DOMContentLoaded',()=>{

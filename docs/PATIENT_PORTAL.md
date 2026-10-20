@@ -86,3 +86,5 @@ Patients can view timestamped nursing records of medication provided under **My 
 New patient registrations now use the server-set initial password **1234**. The registration form does not ask for a password. At first login, users must verify the registered DOB and choose a password meeting the normal rules before a session is created. Existing activated accounts keep their passwords. Initial patient invitations expire after 24 hours and can be reissued through the existing invitation action.
 
 Visit prescriptions now retain the appointment reference, prescriber and recorded date. Under **My care**, patients can see pharmacy-generated medicine invoices and dispensing timestamps alongside nursing administration history. See [Appointment consultation workflow](MEDICATION_ADMINISTRATION.md#appointment-consultation-workflow).
+
+The complete admission, medication schedule, monitoring, timeline, categorised charge and staged discharge workflow is available under **Care timeline & hospital stay**. See [Patient care pathway](COMPLETE_CARE_FLOW.md).
