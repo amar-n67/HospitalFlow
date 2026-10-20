@@ -30,11 +30,11 @@ sealed class AccountMailWorker(Store store,IDataProtectionProvider protection,IC
             } else if(env.IsDevelopment()) {
                 var path=Path.GetFullPath(config["Mail:PickupDirectory"]??Path.Combine(env.ContentRootPath,"..",".local","mail"));Directory.CreateDirectory(path);
                 if(!OperatingSystem.IsWindows())File.SetUnixFileMode(path,UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute);
-                var file=Path.Combine(path,id+".json");
+                var file=Path.Combine(path,id+".json");var temporary=file+".tmp";
                 var options=new FileStreamOptions{Mode=FileMode.Create,Access=FileAccess.Write};
                 if(!OperatingSystem.IsWindows())options.UnixCreateMode=UnixFileMode.UserRead|UnixFileMode.UserWrite;
-                await using var stream=new FileStream(file,options);
-                await JsonSerializer.SerializeAsync(stream,message,cancellationToken:ct);
+                await using(var stream=new FileStream(temporary,options))await JsonSerializer.SerializeAsync(stream,message,cancellationToken:ct);
+                File.Move(temporary,file,true);
             } else throw new InvalidOperationException();
             await Store.Sql(c,tx,"UPDATE hospitalflow.account_mail SET status='Sent',sent_at=now(),attempts=attempts+1,error_code=NULL WHERE id=$1",id);
         }catch(OperationCanceledException)when(ct.IsCancellationRequested){throw;}

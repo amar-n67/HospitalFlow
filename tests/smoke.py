@@ -13,13 +13,24 @@ class Client:
     def request(self,path,data=None,expected=200,header=True,key=None):
         headers={'Content-Type':'application/json'}
         if header:headers['X-HospitalFlow']='1'
-        if path.startswith('/api/actions/'):headers['Idempotency-Key']=key or str(uuid.uuid4())
+        if getattr(self,'hospital',None):headers['X-HospitalFlow-Hospital']=self.hospital
+        if path.startswith('/api/actions/') or path.startswith('/api/people/') or path=='/api/network/referrals' or path=='/api/care/medications/provide' or path=='/api/care/prescribe-visit':headers['Idempotency-Key']=key or str(uuid.uuid4())
         req=urllib.request.Request(self.base+path,data=None if data is None else json.dumps(data).encode(),headers=headers)
         try:
             with self.http.open(req) as r: status=r.status; raw=r.read()
         except urllib.error.HTTPError as e:status=e.code;raw=e.read()
         assert status==expected, f'{path}: expected {expected}, got {status}: {raw.decode()}'
         return json.loads(raw) if raw else None
+    _activated_staff=set()
+    def register_staff(self,data,expected=200,key=None):
+        """Create legacy test fixtures through the real default-password + DOB activation flow."""
+        saved=self.request('/api/people/register',data,expected,key=key)
+        if expected==200 and data.get('password') and saved['reference'] not in self._activated_staff:
+            first=Client(self.base);challenge=first.request('/api/login',{'email':data['email'],'password':'1234'})
+            assert challenge.get('requiresOnboarding')
+            first.request('/api/patient/onboarding',{'challenge':challenge['challenge'],'dob':data['dob'],'password':data['password']})
+            self._activated_staff.add(saved['reference'])
+        return saved
     def login(self,role='administrator'):
         return self.request('/api/login',{'email':role+'@hospitalflow.local','password':PASSWORD})
     def action(self,action,data,expected=200,key=None):return self.request('/api/actions/'+action,data,expected,key=key)
@@ -63,7 +74,8 @@ def run(base):
     c.action('transfer',{'id':admission['id'],'bedId':'B-07','reason':'Synthetic transfer'})
     assert next(b for b in c.request('/api/state')['beds'] if b['id']=='B-06')['status']=='Cleaning'
     c.action('bed-status',{'id':'B-07','status':'Available'},409)
-    c.action('prescription',{'patientId':'HF-1007','medicineId':'MED-01','quantity':5,'instructions':'Synthetic clinician-entered instructions'})
+    clinician=Client(base);clinician.login('doctor')
+    clinician.action('prescription',{'patientId':'HF-1007','medicineId':'MED-01','quantity':5,'instructions':'Synthetic clinician-entered instructions'})
     rx=next(r for r in c.request('/api/state')['prescriptions'] if r['patientId']=='HF-1007')
     c.action('discharge',{'id':admission['id'],'summary':'Synthetic discharge'},409)
     c.action('dispense',{'id':rx['id']});c.action('dispense',{'id':rx['id']},409)
@@ -76,7 +88,7 @@ def run(base):
     c.action('discharge',{'id':admission['id'],'summary':'Duplicate'},409)
     s=c.request('/api/state');assert next(b for b in s['beds'] if b['id']=='B-07')['status']=='Cleaning'
     c.action('bed-status',{'id':'B-07','status':'Available'})
-    c.action('prescription',{'patientId':pid,'medicineId':'MED-02','quantity':999,'instructions':'Stock rejection test'})
+    clinician.action('prescription',{'patientId':pid,'medicineId':'MED-02','quantity':999,'instructions':'Stock rejection test'})
     rx2=next(r for r in c.request('/api/state')['prescriptions'] if r['patientId']==pid)
     c.action('dispense',{'id':rx2['id']},409)
     before=len([a for a in c.request('/api/state')['audit'] if a['action'] in ['bill','adjustment']])

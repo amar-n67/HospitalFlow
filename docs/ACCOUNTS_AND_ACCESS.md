@@ -1,18 +1,25 @@
 # Accounts, access and recovery
 
-Open http://localhost:5136. Your existing administrator sign-in is preserved; its application role is now **Admin**. HospitalFlow has exactly three primary application roles:
+Open http://localhost:5136. Your existing administrator sign-in is preserved; its application role is now **Admin**. HospitalFlow has six application roles:
 
 | Role | Access |
 | --- | --- |
-| User | Own account and activity by default; assigned operational responsibilities only |
-| Admin | All application modules, accounts, audit, system-health and operations controls |
-| Developer | The same full application access as Admin |
+| Patient (stored as User) | Own patient records after first-login verification; unlinked Users remain limited |
+| Admin | Full administration within assigned hospital workspaces |
+| Developer | Full application and network access |
+| Doctor | Clinical and patient workflows; registration of doctors, nurses, patients and volunteers |
+| Nurse | Nursing notes, patient visibility, admissions, transfers, beds and discharge |
+| Volunteer | Own account/profile/activity; job type such as Guard, Washerman or Other |
+
+See [people, IDs and registration](PEOPLE_AND_ROLES.md) for the type-specific entry flow and A/D/N/P/V/DEV prefixes.
 
 Developer access does not expose PostgreSQL credentials, session tickets or password-reset secrets through the interface. Only trusted backend processes receive database credentials.
 
+Hospital membership is checked on every request. The original bootstrap administrator is the network operator; ordinary Admins cannot grant network access or create platform Developers. See [hospital network](HOSPITAL_NETWORK.md) for hospital selection, referrals and retained history.
+
 ## Admin workflow
 
-Go to **Administration → Users & roles → Manage access**. Approve/disable an account, select User/Admin/Developer and assign a User one or more responsibilities:
+Go to **Administration → Users & roles → Manage access**. Approve/disable an account, select User/Admin/Doctor/Nurse/Volunteer/Developer and assign a User one or more responsibilities:
 
 - Reception: registration, patient updates, appointment booking and visit status.
 - Doctor: clinical notes/prescriptions, clinical views and medicine visibility.
@@ -20,7 +27,7 @@ Go to **Administration → Users & roles → Manage access**. Approve/disable an
 - Pharmacist: inventory, stock receipts and dispensing.
 - Billing: invoices, receipts and adjustments.
 
-These responsibilities are permission grants, not additional primary roles. Existing staff roles were converted into the matching grants. Users receive the records required by their assigned modules; record access within each core module is currently hospital-wide, not complete patient-by-patient isolation. Configure stricter record scoping before a hospital requiring it goes live.
+These responsibilities are permission grants, not additional primary roles. Existing staff roles were converted into the matching grants. Users receive the records required by their assigned modules; record access within each core module is currently hospital-wide within the selected hospital, not complete patient-by-patient isolation. Configure stricter record scoping before a hospital requiring it goes live.
 
 Admin and Developer can also use **Operations controls** for supplier/purchase-order management and receipts, stock quarantine/reservations/adjustments, service pricing and reversals, provider availability, staff/department assignments, patient contacts/consent/access, discharge tasks, follow-ups and clinical orders. Commands commit through the audited, idempotent database gateway. Operational record lists currently show up to 200 records per category.
 

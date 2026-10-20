@@ -1,0 +1,31 @@
+'use strict';
+// Age is derived from the calendar date, never stored as an ageing database value.
+function ageYears(dob,now=new Date()){
+ if(!/^\d{4}-\d{2}-\d{2}/.test(dob||''))return null;
+ const [y,m,d]=dob.slice(0,10).split('-').map(Number);
+ let age=now.getFullYear()-y;if(now.getMonth()+1<m||(now.getMonth()+1===m&&now.getDate()<d))age--;
+ return age>=0?age:null;
+}
+function ageLabel(dob){const n=ageYears(dob);return n===null?'Not recorded':n+' years';}
+function ageDisplay(dob){return `<span data-dob-age="${esc(dob||'')}">${ageLabel(dob)}</span>`;}
+function profilePage(){
+ const p=me.patientId?state.patients[0]:me.profile||{};const dob=p.dob;
+ return heading('My profile','Manage your contact details and account security.')+stats([['Registration ID',esc(me.registrationId),'Your permanent reference','♙'],['Age',ageDisplay(dob),'Calculated from date of birth','◷'],['Access',me.patientId?'Patient':esc(me.role),'Assigned by administration','♧']])+`<div class="dashboard-grid">`+panel('Personal details','Contact the hospital to correct identity or employment details',`<div class="info"><h3>${esc(me.name)}</h3><p><b>Date of birth:</b> ${dob?date(dob):'Not recorded'}</p><p><b>Sex:</b> ${esc(p.sex||'Not recorded')}</p>${me.patientId?'':`<p><b>Department:</b> ${esc(p.department||'Not recorded')}</p><p><b>Job:</b> ${esc(p.occupation||p.jobTitle||'Not recorded')}</p>`}<button class="secondary" data-action="password-change">Change password</button></div>`)+panel('Contact details','Email changes take effect after verification at the new address',`<form id="self-profile" class="workspace-form">${field('mobile','Mobile','tel',p.phone||p.mobile||'')}${field('email','Email address','email',me.email)}<label>Address<textarea name="address" maxlength="1000">${esc(p.address||'')}</textarea></label>${me.patientId?`<label>Emergency contact<input name="emergencyContact" maxlength="200" value="${esc(p.emergencyContact||'')}"></label>`:''}<label>Current password (required only for email changes)<input name="currentPassword" type="password" maxlength="128" autocomplete="current-password"></label><p role="alert" class="error" data-work-error></p><button class="primary">Save contact details</button></form>`)+`</div>`;
+}
+function tasksPage(){
+ const tasks=state.workTasks||[];
+ return heading(fullAccess()?'Work assignments':'My work assignments','Non-clinical assignments, locations and completion status.')+stats([['Assigned',tasks.filter(t=>t.status==='Assigned').length,'Ready to start','▦'],['In progress',tasks.filter(t=>t.status==='In progress').length,'Work underway','⇄'],['Completed',tasks.filter(t=>t.status==='Completed').length,'Recorded completions','✓']])+panel('Task board','Start an assigned task before marking it complete',table(['Task','Location','Due','Assigned to','Status','Action'],tasks.map(t=>[esc(t.title),esc(t.location),date(t.dueAt)+' '+time(t.dueAt),esc(t.assignee)+'<small>'+esc(t.registrationId)+'</small>',badge(t.status),t.status==='Completed'?'—':`<button class="secondary" data-work-task="${esc(t.id)}" data-status="${t.status==='Assigned'?'In progress':'Completed'}">${t.status==='Assigned'?'Start task':'Complete task'}</button>`])))+(fullAccess()?panel('Assign a task','Choose a nurse or volunteer. Keep patient names and clinical information out of task text.',`<form id="assign-work" class="workspace-form">${field('assignedTo','Assigned to','select','',(state.people||[]).filter(p=>p.active&&['Nurse','Volunteer'].includes(p.role)).map(p=>option(p.id,p.registrationId+' · '+p.name+' · '+(p.occupation||p.role))).join(''))}${field('title','Task title')}${field('location','Work location')}${field('dueAt','Due date and time','datetime-local')}<p role="alert" class="error" data-work-error></p><button class="primary">Assign task</button></form>`):'');
+}
+function nursingPage(showHeading=true){
+ const active=state.admissions.filter(a=>a.status==='Admitted');
+ return (showHeading?heading('Nursing workspace','Current inpatient care, bed readiness and your work assignments.'):'')+stats([['Active admissions',active.length,'Current inpatient stays','♡'],['Available beds',state.beds.filter(b=>b.status==='Available').length,'Ready for allocation','▤'],['Beds awaiting cleaning',state.beds.filter(b=>b.status==='Cleaning').length,'Coordinate turnaround','⇄'],['My open tasks',(state.workTasks||[]).filter(t=>t.status!=='Completed').length,'Assigned responsibilities','▦']])+`<div class="quick-actions"><a class="quick-action" href="#clinical">Clinical notes →</a><a class="quick-action" href="#admissions">Admissions & transfers →</a><a class="quick-action" href="#beds">Bed board →</a><a class="quick-action" href="#tasks">My tasks →</a></div>`+medicationCarePanel()+panel('Current inpatient list','Patient identity and contact details for authorised care',table(['Patient','Age','Bed','Admitted','Action'],active.map(a=>[person(a.patientId),ageLabel(patient(a.patientId).dob),esc(a.bedId),date(a.at),btn('View journey','patient-detail',a.patientId)])));
+}
+document.addEventListener('submit',async e=>{
+ if(!['self-profile','assign-work'].includes(e.target.id))return;
+ e.preventDefault();const form=e.target,button=form.querySelector('button[type="submit"],button.primary');if(button.disabled)return;button.disabled=true;form.querySelector('[data-work-error]').textContent='';
+ try{const data=Object.fromEntries(new FormData(form));if(form.id==='self-profile'){data.email=validateEmail(data.email);data.mobile=validateMobile(data.mobile);const result=await api('/api/account/profile',data);me=await api('/api/me');await load();toast(result.message);}else{data.dueAt=new Date(data.dueAt).toISOString();await api('/api/work/tasks',data);await load();toast('Task assigned.');}}
+ catch(error){form.querySelector('[data-work-error]').textContent=error.message;}finally{button.disabled=false;}
+});
+document.addEventListener('click',async e=>{const b=e.target.closest('[data-work-task]');if(!b)return;b.disabled=true;try{await api('/api/work/tasks',{id:b.dataset.workTask,status:b.dataset.status});await load();toast('Task updated.');}catch(error){toast(error.message);b.disabled=false;}});
+// Recalculate on the next day even when a profile page stays open overnight.
+setInterval(()=>document.querySelectorAll('[data-dob-age]').forEach(el=>{el.textContent=ageLabel(el.dataset.dobAge);}),60000);

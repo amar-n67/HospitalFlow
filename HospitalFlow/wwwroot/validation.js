@@ -15,3 +15,4 @@ function validatePassword(value,name='',email=''){
  if(normalized.includes('password')||['pass','passwords','qwerty','admin','administrator','welcome','letmein','changeme','abc','abcdef'].includes(letters))throw Error('Choose a less common password. Password, passwords and pass variations are not allowed.');
  if([...name.split(/\s+/),name,email.split('@')[0],email].map(normalize).some(identity=>identity.length>0&&(normalized===identity||(identity.length>=3&&normalized.includes(identity)))))throw Error('Password must not contain your name, username or email address.');
 }
+function validateMobile(value){if(!/^[0-9]{10}$/.test(String(value||'')))throw Error('Mobile number must contain exactly 10 digits, without spaces or country code.');return value;}

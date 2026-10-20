@@ -21,9 +21,9 @@ with tempfile.TemporaryDirectory(prefix='hospitalflow-sql-') as folder:
   sql((ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text())
   sql("""BEGIN;
   INSERT INTO hospitalflow.users(id,name,email,role,password_hash) SELECT name,name,lower(name)||'@hospitalflow.local',name,'fixture-hash' FROM hospitalflow.roles;
-  INSERT INTO hospitalflow.users(id,name,email,role,password_hash) SELECT name,name,lower(name)||'@hospitalflow.local','User','fixture-hash' FROM unnest(ARRAY['Reception','Doctor','Nurse','Pharmacist','Billing']) name;
+  INSERT INTO hospitalflow.users(id,name,email,role,password_hash) SELECT name,name,lower(name)||'@hospitalflow.local','User','fixture-hash' FROM unnest(ARRAY['Reception','Doctor','Nurse','Pharmacist','Billing']) name ON CONFLICT(id) DO NOTHING;
   INSERT INTO hospitalflow.user_permissions SELECT id,id FROM hospitalflow.users WHERE role='User' AND id IN ('Reception','Doctor','Nurse','Pharmacist','Billing');
-  INSERT INTO hospitalflow.departments(name) VALUES('General Medicine');
+  INSERT INTO hospitalflow.departments(name) VALUES('General Medicine') ON CONFLICT DO NOTHING;
   INSERT INTO hospitalflow.doctors(id,name,department,start,"end") VALUES('DR-01','Test doctor','General Medicine','08:00','18:00');
   INSERT INTO hospitalflow.patients(id,name,dob,sex,phone,created) SELECT 'HF-'||(1000+n),'Patient '||n,'1990-01-01'::date+n,'Other','900000000'||n,now() FROM generate_series(1,9)n;
   INSERT INTO hospitalflow.wards(name) VALUES('General Ward');
@@ -36,4 +36,11 @@ with tempfile.TemporaryDirectory(prefix='hospitalflow-sql-') as folder:
     return {'bills':json.loads(sql("SELECT COALESCE(json_agg(json_build_object('id',id,'paid',paid,'balance',balance)),'[]'::json) FROM hospitalflow.invoice_balances;"))}
   from enterprise_database import check_database
   check_database(sql,DatabaseClient())
+  submitted=json.loads(sql("BEGIN;SET LOCAL hospitalflow.actor_id='Reception';SELECT hf_api.booking_command('attendance','{\"status\":\"Present\"}'::jsonb,false);COMMIT;",user='hospitalflow_app'))
+  assert submitted['state']=='Pending'
+  outcome=sql("BEGIN;SET LOCAL hospitalflow.actor_id='Admin';SELECT hf_api.booking_command('review-attendance',jsonb_build_object('id','"+submitted['reference']+"','status','Approved'),false);COMMIT;",user='hospitalflow_app')
+  assert json.loads(outcome)['state']=='Approved'
+  assert sql("SELECT count(*) FROM hospitalflow.activity_log WHERE action='attendance-approved' AND reference='"+submitted['reference']+"';")=='1'
+  print('PASS: native attendance approval and explicit approval-outcome audit evidence.')
+
  finally:subprocess.run([str(BIN/'pg_ctl'),'-D',db,'-m','fast','-w','stop'],check=True,stdout=subprocess.DEVNULL)

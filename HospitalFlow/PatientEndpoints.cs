@@ -17,7 +17,7 @@ static class PatientEndpoints {
             await store.LoginAttempt(key,false);
             string Text(string field)=>body.ValueKind==JsonValueKind.Object&&body.TryGetProperty(field,out var value)&&value.ValueKind==JsonValueKind.String?value.GetString()!:throw new RuleException("Complete all verification and password fields.");
             await store.CompletePatientOnboarding(Text("challenge"),Text("dob"),Text("password"),new("Patient onboarding",null,ctx.TraceIdentifier,ctx.Connection.RemoteIpAddress?.ToString(),ctx.Request.Method));
-            await store.LoginAttempt(key,true);return Results.Ok(new{message="Identity verified and password changed. Sign in with your email or patient ID and new password."});
+            await store.LoginAttempt(key,true);return Results.Ok(new{message="Identity verified and password changed. Sign in with your email or registration ID and new password."});
         });
     }
 }

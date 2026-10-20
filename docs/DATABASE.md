@@ -2,7 +2,7 @@
 
 The application requires PostgreSQL; no runtime data is saved to JSON files. Migrations are embedded in the compiled assembly, applied in order under a transaction lock and checked by checksum on subsequent runs. Editing an already applied migration is rejected; add a new numbered migration instead.
 
-The expanded database now contains 72 tables across business and operations schemas. The [enterprise guide](ENTERPRISE_DATABASE.md) describes the additional modules, procedures, security and schedules; the [installed catalogue](DATABASE_OBJECTS.md) lists every object and column. The table below summarises the original core.
+The expanded database now contains 80 tables across business and operations schemas. The [enterprise guide](ENTERPRISE_DATABASE.md) describes the additional modules, procedures, security and schedules; the [installed catalogue](DATABASE_OBJECTS.md) lists every object and column. The table below summarises the original core.
 
 ## Relational tables
 
@@ -52,3 +52,7 @@ The installed database imported the existing JSON state once, preserving IDs, re
 ## Technical references
 
 The mapping and transaction implementation follows [Npgsql basic usage](https://www.npgsql.org/doc/basic-usage.html). Timestamp values are normalized to UTC before binding, in accordance with [Npgsql date/time handling](https://www.npgsql.org/doc/types/datetime.html). Database invariants use [PostgreSQL constraints](https://www.postgresql.org/docs/17/ddl-constraints.html) and transactional triggers.
+
+## Person profiles and role-prefixed IDs
+
+Migration 012 adds persisted `registration_id` columns to patients/providers/accounts, patient email/address/emergency-contact fields and `person_profiles` for staff DOB/mobile/department/job information. Public IDs use P/D/N/V/A/DEV prefixes; internal keys and existing history are preserved. Doctor/Nurse become explicit roles and Volunteer remains non-clinical. See [people and registration](PEOPLE_AND_ROLES.md).

@@ -16,7 +16,9 @@ sealed class PatientSmsWorker(Store store,IDataProtectionProvider protection,ICo
         var path=Path.GetFullPath(config["Sms:PickupDirectory"]??Path.Combine(env.ContentRootPath,"..",".local","sms"));Directory.CreateDirectory(path);
         if(!OperatingSystem.IsWindows())File.SetUnixFileMode(path,UnixFileMode.UserRead|UnixFileMode.UserWrite|UnixFileMode.UserExecute);
         var options=new FileStreamOptions{Mode=FileMode.Create,Access=FileAccess.Write};if(!OperatingSystem.IsWindows())options.UnixCreateMode=UnixFileMode.UserRead|UnixFileMode.UserWrite;
-        await using(var stream=new FileStream(Path.Combine(path,id+".json"),options))await JsonSerializer.SerializeAsync(stream,message,cancellationToken:ct);
+        var file=Path.Combine(path,id+".json");
+        await using(var stream=new FileStream(file+".tmp",options))await JsonSerializer.SerializeAsync(stream,message,cancellationToken:ct);
+        File.Move(file+".tmp",file,true);
         await Store.Sql(c,tx,"UPDATE hospitalflow.patient_sms SET status='Local pickup',completed_at=now() WHERE id=$1",id);await tx.CommitAsync(ct);return true;
     }
 }

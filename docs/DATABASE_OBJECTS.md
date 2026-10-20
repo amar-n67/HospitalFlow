@@ -5,14 +5,14 @@ Generated from the installed PostgreSQL metadata on `localhost:5432/hospitalflow
 | Object type | Count |
 | --- | --- |
 | EVENT TRIGGER | 2 |
-| FUNCTION | 38 |
-| INDEX | 136 |
+| FUNCTION | 72 |
+| INDEX | 215 |
 | MATERIALIZED VIEW | 1 |
-| POLICY | 4 |
+| POLICY | 59 |
 | PROCEDURE | 23 |
-| SEQUENCE | 5 |
-| TABLE | 72 |
-| TRIGGER | 97 |
+| SEQUENCE | 7 |
+| TABLE | 88 |
+| TRIGGER | 180 |
 | TYPE | 2 |
 | VIEW | 14 |
 
@@ -170,6 +170,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | status_code | integer | YES |  |
 | database_user | text | YES | SESSION_USER |
 | transaction_id | bigint | YES | txid_current() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.admission_events
@@ -184,6 +185,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | reason | text | NO |  |
 | actor_id | text | NO |  |
 | at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.admissions
@@ -197,6 +199,29 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | at | timestamp with time zone | NO |  |
 | status | text | NO |  |
 | discharged | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.appointment_bookings
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | uuid | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
+| patient_id | text | NO |  |
+| doctor_id | text | NO |  |
+| at | timestamp with time zone | NO |  |
+| visit_type | text | NO |  |
+| amount | numeric | NO |  |
+| method | text | NO |  |
+| state | text | NO | 'Pending'::text |
+| payment_mode | text | NO |  |
+| appointment_id | text | YES |  |
+| created_by | text | NO |  |
+| created_at | timestamp with time zone | NO | now() |
+| expires_at | timestamp with time zone | NO | (now() + '00:10:00'::interval) |
+| paid_at | timestamp with time zone | YES |  |
+| refunded_at | timestamp with time zone | YES |  |
 
 
 ### hospitalflow.appointments
@@ -210,6 +235,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | type | text | NO |  |
 | status | text | NO |  |
 | checked_in | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.auth_attempts
@@ -230,6 +256,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | bed_id | text | NO |  |
 | from_time | timestamp with time zone | NO |  |
 | to_time | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.beds
@@ -240,6 +267,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | ward | text | NO |  |
 | category | text | NO |  |
 | status | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.bill_lines
@@ -251,6 +279,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | description | text | NO |  |
 | amount | numeric | NO |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.bills
@@ -260,6 +289,27 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | id | text | NO |  |
 | patient_id | text | NO |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.booking_events
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | bigint | NO |  |
+| booking_id | uuid | NO |  |
+| event | text | NO |  |
+| actor_id | text | NO |  |
+| at | timestamp with time zone | NO | now() |
+
+
+### hospitalflow.booking_settings
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| hospital_id | text | NO |  |
+| fee | numeric | NO |  |
+| updated_at | timestamp with time zone | NO | now() |
 
 
 ### hospitalflow.clinical_orders
@@ -273,6 +323,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | status | text | NO |  |
 | created_at | timestamp with time zone | NO | now() |
 | completed_at | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.data_protection_keys
@@ -303,6 +354,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | required | boolean | NO | true |
 | completed_by | text | YES |  |
 | completed_at | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.doctors
@@ -315,6 +367,21 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | start | time without time zone | NO |  |
 | end | time without time zone | NO |  |
 | active | boolean | NO | true |
+| registration_id | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.email_changes
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| token_hash | text | NO |  |
+| user_id | text | NO |  |
+| email | text | NO |  |
+| password_fingerprint | text | NO |  |
+| expires_at | timestamp with time zone | NO |  |
+| consumed_at | timestamp with time zone | YES |  |
+| created_at | timestamp with time zone | NO | now() |
 
 
 ### hospitalflow.encounters
@@ -329,6 +396,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | opened_at | timestamp with time zone | NO |  |
 | closed_at | timestamp with time zone | YES |  |
 | status | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.follow_ups
@@ -344,6 +412,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | status | text | NO |  |
 | appointment_id | text | YES |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.goods_receipt_lines
@@ -355,6 +424,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | purchase_order_line_id | uuid | NO |  |
 | quantity | integer | NO |  |
 | movement_id | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.goods_receipts
@@ -366,6 +436,17 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | reference | text | NO |  |
 | received_by | text | NO |  |
 | received_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.hospital_memberships
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| user_id | text | NO |  |
+| hospital_id | text | NO |  |
+| active | boolean | NO | true |
+| created_at | timestamp with time zone | NO | now() |
 
 
 ### hospitalflow.hospital_profile
@@ -377,6 +458,22 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | currency | character | NO | 'INR'::bpchar |
 | timezone | text | NO | 'Asia/Kolkata'::text |
 | updated_at | timestamp with time zone | NO | now() |
+
+
+### hospitalflow.hospitals
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | text | NO |  |
+| name | text | NO |  |
+| address | text | NO |  |
+| city | text | NO |  |
+| state | text | NO |  |
+| postal_code | text | NO |  |
+| active | boolean | NO | true |
+| accepting_referrals | boolean | NO | true |
+| is_demo | boolean | NO | false |
+| created_at | timestamp with time zone | NO | now() |
 
 
 ### hospitalflow.idempotency_hash_keys
@@ -397,6 +494,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | request_hash | text | NO |  |
 | reference | text | NO |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.integration_outbox
@@ -409,6 +507,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | aggregate_id | text | NO |  |
 | payload | jsonb | NO | '{}'::jsonb |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.invoice_line_context
@@ -421,6 +520,22 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | quantity | numeric | NO |  |
 | unit_price | numeric | NO |  |
 | currency | character | NO | 'INR'::bpchar |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.medication_administrations
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | uuid | NO | gen_random_uuid() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+| prescription_id | text | NO |  |
+| patient_id | text | NO |  |
+| quantity | integer | NO |  |
+| provided_by | text | NO |  |
+| provided_at | timestamp with time zone | NO | now() |
+| note | text | NO |  |
+| retry_key | uuid | NO |  |
 
 
 ### hospitalflow.medicine_batch_holds
@@ -434,6 +549,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | held_at | timestamp with time zone | NO | now() |
 | released_by | text | YES |  |
 | released_at | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.medicine_batches
@@ -447,6 +563,14 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | quantity | integer | NO |  |
 | reorder | integer | NO |  |
 | price | numeric | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.network_operators
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| user_id | text | NO |  |
 
 
 ### hospitalflow.notes
@@ -458,6 +582,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | text | text | NO |  |
 | kind | text | NO |  |
 | at | timestamp with time zone | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.notification_acknowledgements
@@ -468,6 +593,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | user_id | text | NO |  |
 | reason | text | NO |  |
 | at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.notifications
@@ -482,6 +608,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | target | text | NO |  |
 | opened_at | timestamp with time zone | NO | now() |
 | resolved_at | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.outbox_delivery
@@ -496,6 +623,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | lease_until | timestamp with time zone | YES |  |
 | last_error_code | text | YES |  |
 | delivered_at | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.patient_access_grants
@@ -509,6 +637,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | expires_at | timestamp with time zone | NO |  |
 | granted_by | text | NO |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.patient_accounts
@@ -535,6 +664,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | revoked_at | timestamp with time zone | YES |  |
 | evidence_reference | text | NO |  |
 | recorded_by | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.patient_contacts
@@ -548,6 +678,16 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | phone | text | NO |  |
 | is_emergency | boolean | NO | false |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.patient_hospitals
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| patient_id | text | NO |  |
+| hospital_id | text | NO |  |
+| registered_at | timestamp with time zone | NO | now() |
 
 
 ### hospitalflow.patient_login_challenges
@@ -584,6 +724,11 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | sex | text | NO |  |
 | phone | text | NO |  |
 | created | timestamp with time zone | NO |  |
+| registration_id | text | NO |  |
+| email | text | YES |  |
+| address | text | YES |  |
+| emergency_contact | text | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.payment_reversals
@@ -596,6 +741,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | reason | text | NO |  |
 | approved_by | text | NO |  |
 | at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.payments
@@ -607,6 +753,24 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | amount | numeric | NO |  |
 | method | text | NO |  |
 | at | timestamp with time zone | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.person_profiles
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| user_id | text | NO |  |
+| doctor_id | text | YES |  |
+| mobile | text | YES |  |
+| dob | date | YES |  |
+| sex | text | YES |  |
+| address | text | YES |  |
+| department | text | YES |  |
+| job_title | text | YES |  |
+| occupation | text | YES |  |
+| created_at | timestamp with time zone | NO | now() |
+| updated_at | timestamp with time zone | NO | now() |
 
 
 ### hospitalflow.prescription_authors
@@ -616,6 +780,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | prescription_id | text | NO |  |
 | created_by | text | NO |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.prescription_dispensations
@@ -628,6 +793,16 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | bill_id | text | NO |  |
 | dispensed_by | text | NO |  |
 | at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.prescription_visits
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| prescription_id | text | NO |  |
+| appointment_id | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.prescriptions
@@ -640,6 +815,8 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | quantity | integer | NO |  |
 | instructions | text | NO |  |
 | status | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
+| created_at | timestamp with time zone | YES | now() |
 
 
 ### hospitalflow.provider_absences
@@ -653,6 +830,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | reason_code | text | NO |  |
 | approved_by | text | NO |  |
 | cancelled_at | timestamp with time zone | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.provider_sessions
@@ -664,6 +842,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | starts_at | timestamp with time zone | NO |  |
 | ends_at | timestamp with time zone | NO |  |
 | capacity | integer | NO | 1 |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.purchase_order_lines
@@ -675,6 +854,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | medicine_id | text | NO |  |
 | quantity | integer | NO |  |
 | unit_cost | numeric | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.purchase_orders
@@ -688,6 +868,25 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | created_by | text | NO |  |
 | approved_by | text | YES |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.referrals
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | uuid | NO | gen_random_uuid() |
+| patient_id | text | NO |  |
+| source_hospital_id | text | NO |  |
+| target_hospital_id | text | NO |  |
+| target_doctor_id | text | YES |  |
+| referred_by | text | NO |  |
+| reason | text | NO |  |
+| status | text | NO | 'Pending'::text |
+| created_at | timestamp with time zone | NO | now() |
+| resolved_at | timestamp with time zone | YES |  |
+| resolved_by | text | YES |  |
+| resolution_note | text | YES |  |
 
 
 ### hospitalflow.roles
@@ -711,6 +910,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | occurred_at | timestamp with time zone | NO | now() |
 | database_user | text | YES | SESSION_USER |
 | transaction_id | bigint | YES | txid_current() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.schema_versions
@@ -732,6 +932,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | department | text | YES |  |
 | category | text | NO |  |
 | active | boolean | NO | true |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.service_prices
@@ -745,6 +946,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | effective_from | timestamp with time zone | NO |  |
 | effective_to | timestamp with time zone | YES |  |
 | created_by | text | YES |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.sessions
@@ -756,6 +958,41 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | ticket | bytea | NO |  |
 | expires_at | timestamp with time zone | NO |  |
 | created_at | timestamp with time zone | NO | now() |
+
+
+### hospitalflow.staff_attendance
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | uuid | NO | gen_random_uuid() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+| user_id | text | NO |  |
+| day | date | NO |  |
+| status | text | NO |  |
+| check_in | timestamp with time zone | YES |  |
+| check_out | timestamp with time zone | YES |  |
+| marked_by | text | NO |  |
+| approval_status | text | NO | 'Pending'::text |
+| reviewed_by | text | YES |  |
+| reviewed_at | timestamp with time zone | YES |  |
+| review_note | text | NO | ''::text |
+| submitted_at | timestamp with time zone | NO | now() |
+| total_seconds | bigint | YES |  |
+
+
+### hospitalflow.staff_leaves
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | uuid | NO | gen_random_uuid() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+| user_id | text | NO |  |
+| starts_on | date | NO |  |
+| ends_on | date | NO |  |
+| reason | text | NO |  |
+| status | text | NO | 'Pending'::text |
+| created_at | timestamp with time zone | NO | now() |
+| resolved_by | text | YES |  |
 
 
 ### hospitalflow.staff_members
@@ -770,6 +1007,17 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | job_title | text | NO |  |
 | active | boolean | NO | true |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.staff_onboarding
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| user_id | text | NO |  |
+| must_change_password | boolean | NO | true |
+| expires_at | timestamp with time zone | NO | (now() + '24:00:00'::interval) |
+| activated_at | timestamp with time zone | YES |  |
 
 
 ### hospitalflow.stock_movements
@@ -781,6 +1029,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | quantity | integer | NO |  |
 | reason | text | NO |  |
 | at | timestamp with time zone | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.stock_reservations
@@ -793,6 +1042,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | quantity | integer | NO |  |
 | status | text | NO |  |
 | created_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.suppliers
@@ -805,6 +1055,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | contact_email | text | YES |  |
 | contact_phone | text | YES |  |
 | active | boolean | NO | true |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.system_settings
@@ -821,6 +1072,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | --- | --- | --- | --- |
 | user_id | text | NO |  |
 | department | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
 
 
 ### hospitalflow.user_permissions
@@ -838,6 +1090,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | user_id | text | NO |  |
 | theme | text | NO |  |
 | updated_at | timestamp with time zone | NO | now() |
+| hospital_id | text | YES |  |
 
 
 ### hospitalflow.users
@@ -852,6 +1105,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | active | boolean | NO | true |
 | created_at | timestamp with time zone | NO | now() |
 | email_confirmed | boolean | NO | true |
+| registration_id | text | NO |  |
 
 
 ### hospitalflow.wards
@@ -862,6 +1116,22 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | department | text | YES |  |
 | active | boolean | NO | true |
 
+
+### hospitalflow.work_tasks
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | text | NO |  |
+| assigned_to | text | NO |  |
+| created_by | text | NO |  |
+| title | text | NO |  |
+| location | text | NO |  |
+| due_at | timestamp with time zone | NO |  |
+| status | text | NO | 'Assigned'::text |
+| created_at | timestamp with time zone | NO | now() |
+| updated_at | timestamp with time zone | NO | now() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+
 ## Stored procedures and functions
 
 | Schema | Routine | Kind | Arguments | Security definer |
@@ -869,24 +1139,40 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_api | admit_patient | PROCEDURE | INOUT p_id text, IN p_patient text, IN p_bed text, IN p_reason text | False |
 | hf_api | approve_purchase_order | PROCEDURE | IN p_id uuid | False |
 | hf_api | book_appointment | PROCEDURE | INOUT p_id text, IN p_patient text, IN p_doctor text, IN p_at timestamp with time zone, IN p_type text | False |
+| hf_api | booking_actor | FUNCTION |  | True |
+| hf_api | booking_command | FUNCTION | p_action text, p jsonb, p_test boolean | True |
+| hf_api | booking_command_base | FUNCTION | p_action text, p jsonb, p_test boolean | True |
+| hf_api | booking_slots | FUNCTION | p_doctor text, p_day date, p_exclude text | True |
+| hf_api | booking_state | FUNCTION |  | True |
+| hf_api | booking_state_base | FUNCTION |  | True |
+| hf_api | can_book_provider | FUNCTION | p_doctor text | True |
+| hf_api | can_review_attendance | FUNCTION |  | True |
 | hf_api | claim_outbox | FUNCTION | p_limit integer, p_lease_seconds integer | False |
 | hf_api | complete_outbox | PROCEDURE | IN p_event uuid, IN p_token uuid, IN p_success boolean, IN p_error_code text | False |
 | hf_api | create_bill | PROCEDURE | INOUT p_id text, IN p_patient text, IN p_description text, IN p_amount numeric | False |
 | hf_api | discharge_patient | PROCEDURE | IN p_id text, IN p_summary text | False |
 | hf_api | dispense_prescription | PROCEDURE | IN p_id text, INOUT p_bill text | False |
+| hf_api | doctor_unavailable | FUNCTION | p_doctor text, p_at timestamp with time zone | True |
 | hf_api | execute | FUNCTION | p_action text, p_payload jsonb, p_key uuid, p_hash text | False |
+| hf_api | hospital_leave_calendar | FUNCTION |  | True |
 | hf_api | hospital_today | FUNCTION |  | False |
+| hf_api | manage_staff_attendance | FUNCTION | p jsonb | True |
+| hf_api | medication_care | FUNCTION |  | True |
 | hf_api | new_id | FUNCTION | p_prefix text | False |
+| hf_api | person_id | FUNCTION | p_prefix text | False |
 | hf_api | positive_number | FUNCTION | p_body jsonb, p_key text, p_integer boolean | False |
 | hf_api | post_adjustment | PROCEDURE | IN p_bill text, IN p_amount numeric, IN p_reason text, INOUT p_id text | False |
 | hf_api | post_payment | PROCEDURE | IN p_bill text, IN p_amount numeric, IN p_method text, INOUT p_id text | False |
 | hf_api | post_service_charge | PROCEDURE | IN p_bill text, IN p_service uuid, IN p_quantity numeric, INOUT p_id text | False |
+| hf_api | prescribe_visit | FUNCTION | p_appointment text, p_payload jsonb, p_key uuid, p_hash text | True |
+| hf_api | provide_medication | FUNCTION | p_prescription text, p_quantity integer, p_note text, p_key uuid | True |
 | hf_api | receive_purchase_order | PROCEDURE | IN p_order uuid, IN p_reference text, IN p_lines jsonb, INOUT p_id uuid | False |
 | hf_api | receive_stock | PROCEDURE | INOUT p_movement text, IN p_medicine text, IN p_quantity integer, IN p_reason text | False |
 | hf_api | required_text | FUNCTION | p_body jsonb, p_key text, p_max integer | False |
 | hf_api | reserve_prescription | PROCEDURE | IN p_prescription text, INOUT p_id uuid | False |
 | hf_api | reverse_payment | PROCEDURE | IN p_payment text, IN p_amount numeric, IN p_reason text, INOUT p_id uuid | False |
 | hf_api | save_patient | PROCEDURE | INOUT p_id text, IN p_name text, IN p_dob date, IN p_sex text, IN p_phone text | False |
+| hf_api | select_booking_hospital | FUNCTION | p_hospital text | True |
 | hf_api | set_appointment_status | PROCEDURE | IN p_id text, IN p_status text | False |
 | hf_api | transfer_patient | PROCEDURE | IN p_id text, IN p_bed text, IN p_reason text | False |
 | hf_ops | capture_ddl | FUNCTION |  | True |
@@ -902,17 +1188,35 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_ops | worker_heartbeat | PROCEDURE | IN p_worker text, IN p_status text | True |
 | hf_security | actor_id | FUNCTION |  | False |
 | hf_security | audit | FUNCTION | p_action text, p_reference text | False |
+| hf_security | auto_hospital_member | FUNCTION |  | True |
 | hf_security | can_access_encounter | FUNCTION | p_encounter uuid | True |
 | hf_security | can_access_patient | FUNCTION | p_patient text | True |
+| hf_security | current_hospital | FUNCTION |  | False |
+| hf_security | directory_providers | FUNCTION |  | True |
+| hf_security | enrolled_patient | FUNCTION | p_patient text | True |
+| hf_security | guard_clinical_author | FUNCTION |  | True |
+| hf_security | guard_doctor_visit | FUNCTION |  | True |
+| hf_security | guard_hospital_row | FUNCTION |  | True |
 | hf_security | guard_patient_account | FUNCTION |  | True |
+| hf_security | is_visit_doctor | FUNCTION | p_doctor text | True |
+| hf_security | own_patient | FUNCTION | p_patient text | False |
+| hf_security | own_related | FUNCTION | p_kind text, p_id text | True |
+| hf_security | patient_email_guard | FUNCTION |  | True |
 | hf_security | protect_account | FUNCTION |  | False |
+| hf_security | referral_patient_identity | FUNCTION |  | True |
+| hf_security | registration_identity | FUNCTION |  | False |
 | hf_security | require_actor | FUNCTION | p_roles text[] | True |
+| hf_security | separate_doctor_permission | FUNCTION |  | True |
+| hf_security | validate_person_profile | FUNCTION |  | False |
+| hospitalflow | booking_cancel_refund | FUNCTION |  | True |
 | hospitalflow | complete_follow_up | FUNCTION |  | True |
 | hospitalflow | enqueue_change | FUNCTION |  | True |
+| hospitalflow | guard_booking_department | FUNCTION |  | False |
 | hospitalflow | maintain_bed_history | FUNCTION |  | True |
 | hospitalflow | prevent_ledger_changes | FUNCTION |  | False |
 | hospitalflow | record_row_history | FUNCTION |  | True |
 | hospitalflow | sync_encounter | FUNCTION |  | True |
+| hospitalflow | sync_patient_registration | FUNCTION |  | True |
 | hospitalflow | validate_absence | FUNCTION |  | False |
 | hospitalflow | validate_appointment_overlap | FUNCTION |  | False |
 | hospitalflow | validate_appointment_schedule | FUNCTION |  | False |
@@ -935,14 +1239,71 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_ops | EVENT TRIGGER | hospitalflow_ddl_audit |
 | hf_ops | EVENT TRIGGER | hospitalflow_drop_audit |
 | hf_reporting | MATERIALIZED VIEW | daily_collections |
+| hospitalflow | POLICY | activity_log.hospital_fence |
+| hospitalflow | POLICY | admission_events.hospital_fence |
+| hospitalflow | POLICY | admissions.hospital_fence |
+| hospitalflow | POLICY | appointment_bookings.hospital_fence |
+| hospitalflow | POLICY | appointments.hospital_fence |
+| hospitalflow | POLICY | bed_assignments.hospital_fence |
+| hospitalflow | POLICY | beds.hospital_fence |
+| hospitalflow | POLICY | bill_lines.hospital_fence |
+| hospitalflow | POLICY | bills.hospital_fence |
+| hospitalflow | POLICY | booking_events.booking_event_fence |
+| hospitalflow | POLICY | booking_settings.hospital_fence |
 | hospitalflow | POLICY | clinical_orders.encounter_scope |
+| hospitalflow | POLICY | clinical_orders.hospital_fence |
+| hospitalflow | POLICY | discharge_tasks.hospital_fence |
+| hospitalflow | POLICY | doctors.hospital_fence |
+| hospitalflow | POLICY | encounters.hospital_fence |
+| hospitalflow | POLICY | follow_ups.hospital_fence |
 | hospitalflow | POLICY | follow_ups.patient_scope |
+| hospitalflow | POLICY | goods_receipt_lines.hospital_fence |
+| hospitalflow | POLICY | goods_receipts.hospital_fence |
+| hospitalflow | POLICY | idempotency_keys.hospital_fence |
+| hospitalflow | POLICY | integration_outbox.hospital_fence |
+| hospitalflow | POLICY | invoice_line_context.hospital_fence |
+| hospitalflow | POLICY | medication_administrations.medication_insert |
+| hospitalflow | POLICY | medication_administrations.medication_read |
+| hospitalflow | POLICY | medicine_batch_holds.hospital_fence |
+| hospitalflow | POLICY | medicine_batches.hospital_fence |
+| hospitalflow | POLICY | notes.hospital_fence |
+| hospitalflow | POLICY | notification_acknowledgements.hospital_fence |
+| hospitalflow | POLICY | notifications.hospital_fence |
+| hospitalflow | POLICY | outbox_delivery.hospital_fence |
+| hospitalflow | POLICY | patient_access_grants.hospital_fence |
+| hospitalflow | POLICY | patient_consents.hospital_fence |
 | hospitalflow | POLICY | patient_consents.patient_scope |
+| hospitalflow | POLICY | patient_contacts.hospital_fence |
 | hospitalflow | POLICY | patient_contacts.patient_scope |
+| hospitalflow | POLICY | patients.hospital_fence |
+| hospitalflow | POLICY | payment_reversals.hospital_fence |
+| hospitalflow | POLICY | payments.hospital_fence |
+| hospitalflow | POLICY | prescription_authors.hospital_fence |
+| hospitalflow | POLICY | prescription_dispensations.hospital_fence |
+| hospitalflow | POLICY | prescription_visits.visit_prescription_scope |
+| hospitalflow | POLICY | prescriptions.hospital_fence |
+| hospitalflow | POLICY | provider_absences.hospital_fence |
+| hospitalflow | POLICY | provider_sessions.hospital_fence |
+| hospitalflow | POLICY | purchase_order_lines.hospital_fence |
+| hospitalflow | POLICY | purchase_orders.hospital_fence |
+| hospitalflow | POLICY | referrals.referral_scope |
+| hospitalflow | POLICY | row_history.hospital_fence |
+| hospitalflow | POLICY | service_catalog.hospital_fence |
+| hospitalflow | POLICY | service_prices.hospital_fence |
+| hospitalflow | POLICY | staff_attendance.hospital_fence |
+| hospitalflow | POLICY | staff_leaves.hospital_fence |
+| hospitalflow | POLICY | staff_members.hospital_fence |
+| hospitalflow | POLICY | stock_movements.hospital_fence |
+| hospitalflow | POLICY | stock_reservations.hospital_fence |
+| hospitalflow | POLICY | suppliers.hospital_fence |
+| hospitalflow | POLICY | user_departments.hospital_fence |
+| hospitalflow | POLICY | work_tasks.hospital_fence |
 | hf_ops | SEQUENCE | schema_change_events_id_seq |
 | hospitalflow | SEQUENCE | bed_assignments_id_seq |
+| hospitalflow | SEQUENCE | booking_events_id_seq |
 | hospitalflow | SEQUENCE | data_protection_keys_id_seq |
 | hospitalflow | SEQUENCE | document_number |
+| hospitalflow | SEQUENCE | person_number |
 | hospitalflow | SEQUENCE | row_history_id_seq |
 | hospitalflow | TYPE | encounter_kind |
 | hospitalflow | TYPE | purchase_status |
@@ -972,96 +1333,179 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_ops | restore_drills.immutable_restore_evidence |
 | hf_ops | schema_change_events.immutable_ddl_audit |
 | hospitalflow | activity_log.immutable_ledger |
+| hospitalflow | activity_log.z_hospital_guard |
 | hospitalflow | admission_events.record_history |
+| hospitalflow | admission_events.z_hospital_guard |
 | hospitalflow | admissions.admission_consistency |
 | hospitalflow | admissions.bed_history |
 | hospitalflow | admissions.discharge_readiness |
 | hospitalflow | admissions.encounter_sync |
 | hospitalflow | admissions.enqueue_integration_event |
 | hospitalflow | admissions.record_history |
+| hospitalflow | admissions.z_hospital_guard |
+| hospitalflow | appointment_bookings.booking_department |
+| hospitalflow | appointment_bookings.record_history |
+| hospitalflow | appointment_bookings.z_hospital_guard |
 | hospitalflow | appointments.appointment_overlap |
 | hospitalflow | appointments.appointment_schedule |
+| hospitalflow | appointments.booking_cancel_refund |
+| hospitalflow | appointments.booking_department |
+| hospitalflow | appointments.doctor_visit |
 | hospitalflow | appointments.encounter_sync |
 | hospitalflow | appointments.enqueue_integration_event |
 | hospitalflow | appointments.follow_up_completion |
 | hospitalflow | appointments.record_history |
+| hospitalflow | appointments.z_hospital_guard |
+| hospitalflow | bed_assignments.z_hospital_guard |
 | hospitalflow | beds.bed_consistency |
 | hospitalflow | beds.record_history |
+| hospitalflow | beds.z_hospital_guard |
 | hospitalflow | bill_lines.immutable_ledger |
 | hospitalflow | bill_lines.line_balance |
 | hospitalflow | bill_lines.record_history |
+| hospitalflow | bill_lines.z_hospital_guard |
 | hospitalflow | bills.record_history |
+| hospitalflow | bills.z_hospital_guard |
+| hospitalflow | booking_events.immutable_ledger |
+| hospitalflow | booking_settings.z_hospital_guard |
+| hospitalflow | clinical_orders.clinical_author |
 | hospitalflow | clinical_orders.record_history |
+| hospitalflow | clinical_orders.z_hospital_guard |
 | hospitalflow | departments.record_history |
 | hospitalflow | discharge_tasks.record_history |
+| hospitalflow | discharge_tasks.z_hospital_guard |
 | hospitalflow | doctors.record_history |
+| hospitalflow | doctors.registration_identity |
+| hospitalflow | doctors.z_hospital_guard |
 | hospitalflow | encounters.record_history |
+| hospitalflow | encounters.z_hospital_guard |
+| hospitalflow | follow_ups.clinical_author |
 | hospitalflow | follow_ups.record_history |
+| hospitalflow | follow_ups.z_hospital_guard |
 | hospitalflow | goods_receipt_lines.immutable_ledger |
 | hospitalflow | goods_receipt_lines.record_history |
+| hospitalflow | goods_receipt_lines.z_hospital_guard |
 | hospitalflow | goods_receipts.immutable_ledger |
 | hospitalflow | goods_receipts.record_history |
+| hospitalflow | goods_receipts.z_hospital_guard |
+| hospitalflow | hospital_memberships.record_history |
 | hospitalflow | hospital_profile.record_history |
+| hospitalflow | hospitals.record_history |
+| hospitalflow | idempotency_keys.z_hospital_guard |
 | hospitalflow | integration_outbox.immutable_ledger |
+| hospitalflow | integration_outbox.z_hospital_guard |
 | hospitalflow | invoice_line_context.immutable_ledger |
 | hospitalflow | invoice_line_context.record_history |
+| hospitalflow | invoice_line_context.z_hospital_guard |
+| hospitalflow | medication_administrations.immutable_ledger |
+| hospitalflow | medication_administrations.record_history |
+| hospitalflow | medication_administrations.z_hospital_guard |
 | hospitalflow | medicine_batch_holds.record_history |
+| hospitalflow | medicine_batch_holds.z_hospital_guard |
 | hospitalflow | medicine_batches.record_history |
 | hospitalflow | medicine_batches.stock_batch_balance |
+| hospitalflow | medicine_batches.z_hospital_guard |
+| hospitalflow | notes.clinical_author |
 | hospitalflow | notes.record_history |
+| hospitalflow | notes.z_hospital_guard |
 | hospitalflow | notification_acknowledgements.immutable_ledger |
 | hospitalflow | notification_acknowledgements.record_history |
+| hospitalflow | notification_acknowledgements.z_hospital_guard |
+| hospitalflow | notifications.z_hospital_guard |
+| hospitalflow | outbox_delivery.z_hospital_guard |
 | hospitalflow | patient_access_grants.record_history |
+| hospitalflow | patient_access_grants.z_hospital_guard |
 | hospitalflow | patient_accounts.patient_link_guard |
 | hospitalflow | patient_accounts.record_history |
+| hospitalflow | patient_accounts.sync_registration |
 | hospitalflow | patient_consents.record_history |
+| hospitalflow | patient_consents.z_hospital_guard |
 | hospitalflow | patient_contacts.record_history |
+| hospitalflow | patient_contacts.z_hospital_guard |
+| hospitalflow | patient_hospitals.record_history |
+| hospitalflow | patients.auto_hospital |
 | hospitalflow | patients.enqueue_integration_event |
+| hospitalflow | patients.linked_email |
 | hospitalflow | patients.patient_identity |
 | hospitalflow | patients.record_history |
+| hospitalflow | patients.registration_identity |
+| hospitalflow | patients.z_hospital_guard |
 | hospitalflow | payment_reversals.enqueue_integration_event |
 | hospitalflow | payment_reversals.immutable_ledger |
 | hospitalflow | payment_reversals.payment_reversal_limit |
 | hospitalflow | payment_reversals.record_history |
+| hospitalflow | payment_reversals.z_hospital_guard |
 | hospitalflow | payments.enqueue_integration_event |
 | hospitalflow | payments.immutable_ledger |
 | hospitalflow | payments.payment_balance |
 | hospitalflow | payments.record_history |
+| hospitalflow | payments.z_hospital_guard |
+| hospitalflow | person_profiles.record_history |
+| hospitalflow | person_profiles.validate_profile |
 | hospitalflow | prescription_authors.record_history |
+| hospitalflow | prescription_authors.z_hospital_guard |
 | hospitalflow | prescription_dispensations.immutable_ledger |
 | hospitalflow | prescription_dispensations.record_history |
+| hospitalflow | prescription_dispensations.z_hospital_guard |
+| hospitalflow | prescription_visits.immutable_ledger |
+| hospitalflow | prescription_visits.record_history |
+| hospitalflow | prescription_visits.z_hospital_guard |
+| hospitalflow | prescriptions.clinical_author |
 | hospitalflow | prescriptions.dispense_expiry |
 | hospitalflow | prescriptions.dispense_trace |
 | hospitalflow | prescriptions.enqueue_integration_event |
 | hospitalflow | prescriptions.prescription_state |
 | hospitalflow | prescriptions.record_history |
+| hospitalflow | prescriptions.z_hospital_guard |
 | hospitalflow | provider_absences.absence_conflict |
 | hospitalflow | provider_absences.record_history |
+| hospitalflow | provider_absences.z_hospital_guard |
 | hospitalflow | provider_sessions.provider_session_overlap |
 | hospitalflow | provider_sessions.record_history |
+| hospitalflow | provider_sessions.z_hospital_guard |
 | hospitalflow | purchase_order_lines.record_history |
+| hospitalflow | purchase_order_lines.z_hospital_guard |
 | hospitalflow | purchase_orders.enqueue_integration_event |
 | hospitalflow | purchase_orders.record_history |
+| hospitalflow | purchase_orders.z_hospital_guard |
+| hospitalflow | referrals.record_history |
 | hospitalflow | row_history.immutable_ledger |
+| hospitalflow | row_history.z_hospital_guard |
 | hospitalflow | service_catalog.record_history |
+| hospitalflow | service_catalog.z_hospital_guard |
 | hospitalflow | service_prices.price_effectivity |
 | hospitalflow | service_prices.record_history |
+| hospitalflow | service_prices.z_hospital_guard |
+| hospitalflow | staff_attendance.record_history |
+| hospitalflow | staff_attendance.z_hospital_guard |
+| hospitalflow | staff_leaves.record_history |
+| hospitalflow | staff_leaves.z_hospital_guard |
 | hospitalflow | staff_members.record_history |
+| hospitalflow | staff_members.z_hospital_guard |
 | hospitalflow | stock_movements.immutable_ledger |
 | hospitalflow | stock_movements.record_history |
 | hospitalflow | stock_movements.stock_movement_balance |
+| hospitalflow | stock_movements.z_hospital_guard |
 | hospitalflow | stock_reservations.record_history |
 | hospitalflow | stock_reservations.reservation_stock_balance |
+| hospitalflow | stock_reservations.z_hospital_guard |
 | hospitalflow | suppliers.record_history |
+| hospitalflow | suppliers.z_hospital_guard |
 | hospitalflow | system_settings.record_history |
 | hospitalflow | user_departments.record_history |
+| hospitalflow | user_departments.z_hospital_guard |
 | hospitalflow | user_permissions.patient_grant_guard |
 | hospitalflow | user_permissions.record_history |
+| hospitalflow | user_permissions.separate_doctor_permission |
 | hospitalflow | user_preferences.record_history |
+| hospitalflow | users.auto_hospital |
 | hospitalflow | users.patient_role_guard |
 | hospitalflow | users.protect_account |
 | hospitalflow | users.record_history |
+| hospitalflow | users.registration_identity |
 | hospitalflow | wards.record_history |
+| hospitalflow | work_tasks.record_history |
+| hospitalflow | work_tasks.z_hospital_guard |
 
 ## Constraint inventory
 
@@ -1103,10 +1547,12 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | account_tokens | account_tokens_purpose_check | CHECK ((purpose = ANY (ARRAY['verify'::text, 'reset'::text]))) |
 | hospitalflow | account_tokens | account_tokens_token_hash_check | CHECK ((length(token_hash) = 64)) |
 | hospitalflow | account_tokens | account_tokens_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | activity_log | activity_log_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | activity_log | activity_log_pkey | PRIMARY KEY (id) |
 | hospitalflow | admission_events | admission_events_actor_id_fkey | FOREIGN KEY (actor_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | admission_events | admission_events_admission_id_fkey | FOREIGN KEY (admission_id) REFERENCES hospitalflow.admissions(id) |
 | hospitalflow | admission_events | admission_events_from_bed_fkey | FOREIGN KEY (from_bed) REFERENCES hospitalflow.beds(id) |
+| hospitalflow | admission_events | admission_events_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | admission_events | admission_events_kind_check | CHECK ((kind = ANY (ARRAY['Admission'::text, 'Transfer'::text, 'Discharge'::text]))) |
 | hospitalflow | admission_events | admission_events_pkey | PRIMARY KEY (id) |
 | hospitalflow | admission_events | admission_events_reason_check | CHECK (((length(TRIM(BOTH FROM reason)) >= 1) AND (length(TRIM(BOTH FROM reason)) <= 4000))) |
@@ -1114,11 +1560,25 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | admissions | admission_consistency | TRIGGER DEFERRABLE INITIALLY DEFERRED |
 | hospitalflow | admissions | admissions_bed_id_fkey | FOREIGN KEY (bed_id) REFERENCES hospitalflow.beds(id) |
 | hospitalflow | admissions | admissions_check | CHECK ((((status = 'Admitted'::text) AND (discharged IS NULL)) OR ((status = 'Discharged'::text) AND (discharged IS NOT NULL) AND (discharged >= at)))) |
+| hospitalflow | admissions | admissions_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | admissions | admissions_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | admissions | admissions_pkey | PRIMARY KEY (id) |
 | hospitalflow | admissions | admissions_status_check | CHECK ((status = ANY (ARRAY['Admitted'::text, 'Discharged'::text]))) |
 | hospitalflow | admissions | discharge_readiness | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | appointment_bookings | appointment_bookings_amount_check | CHECK ((amount > (0)::numeric)) |
+| hospitalflow | appointment_bookings | appointment_bookings_appointment_id_fkey | FOREIGN KEY (appointment_id) REFERENCES hospitalflow.appointments(id) |
+| hospitalflow | appointment_bookings | appointment_bookings_appointment_id_key | UNIQUE (appointment_id) |
+| hospitalflow | appointment_bookings | appointment_bookings_created_by_fkey | FOREIGN KEY (created_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | appointment_bookings | appointment_bookings_doctor_id_fkey | FOREIGN KEY (doctor_id) REFERENCES hospitalflow.doctors(id) |
+| hospitalflow | appointment_bookings | appointment_bookings_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | appointment_bookings | appointment_bookings_method_check | CHECK ((method = ANY (ARRAY['UPI'::text, 'Netbanking'::text, 'Card'::text, 'QR'::text, 'Cash'::text]))) |
+| hospitalflow | appointment_bookings | appointment_bookings_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
+| hospitalflow | appointment_bookings | appointment_bookings_payment_mode_check | CHECK ((payment_mode = ANY (ARRAY['Test'::text, 'Cash'::text, 'Disabled'::text]))) |
+| hospitalflow | appointment_bookings | appointment_bookings_pkey | PRIMARY KEY (id) |
+| hospitalflow | appointment_bookings | appointment_bookings_state_check | CHECK ((state = ANY (ARRAY['Pending'::text, 'Paid'::text, 'Expired'::text, 'Cancelled'::text, 'Refund pending'::text, 'Refunded'::text]))) |
+| hospitalflow | appointment_bookings | appointment_bookings_visit_type_check | CHECK ((visit_type = ANY (ARRAY['Consultation'::text, 'Follow-up'::text, 'Review'::text]))) |
 | hospitalflow | appointments | appointments_doctor_id_fkey | FOREIGN KEY (doctor_id) REFERENCES hospitalflow.doctors(id) |
+| hospitalflow | appointments | appointments_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | appointments | appointments_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | appointments | appointments_pkey | PRIMARY KEY (id) |
 | hospitalflow | appointments | appointments_status_check | CHECK ((status = ANY (ARRAY['Scheduled'::text, 'Checked in'::text, 'In consultation'::text, 'Completed'::text, 'Cancelled'::text, 'No show'::text]))) |
@@ -1127,19 +1587,30 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | bed_assignments | bed_assignments_admission_id_fkey | FOREIGN KEY (admission_id) REFERENCES hospitalflow.admissions(id) |
 | hospitalflow | bed_assignments | bed_assignments_bed_id_fkey | FOREIGN KEY (bed_id) REFERENCES hospitalflow.beds(id) |
 | hospitalflow | bed_assignments | bed_assignments_check | CHECK (((to_time IS NULL) OR (to_time >= from_time))) |
+| hospitalflow | bed_assignments | bed_assignments_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | bed_assignments | bed_assignments_pkey | PRIMARY KEY (id) |
 | hospitalflow | beds | bed_consistency | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | beds | beds_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | beds | beds_pkey | PRIMARY KEY (id) |
 | hospitalflow | beds | beds_status_check | CHECK ((status = ANY (ARRAY['Available'::text, 'Occupied'::text, 'Cleaning'::text, 'Maintenance'::text]))) |
 | hospitalflow | beds | beds_ward_fkey | FOREIGN KEY (ward) REFERENCES hospitalflow.wards(name) |
 | hospitalflow | bill_lines | bill_lines_amount_check | CHECK ((amount <> (0)::numeric)) |
 | hospitalflow | bill_lines | bill_lines_bill_id_fkey | FOREIGN KEY (bill_id) REFERENCES hospitalflow.bills(id) |
+| hospitalflow | bill_lines | bill_lines_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | bill_lines | bill_lines_pkey | PRIMARY KEY (id) |
 | hospitalflow | bill_lines | line_balance | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | bills | bills_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | bills | bills_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | bills | bills_pkey | PRIMARY KEY (id) |
+| hospitalflow | booking_events | booking_events_actor_id_fkey | FOREIGN KEY (actor_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | booking_events | booking_events_booking_id_fkey | FOREIGN KEY (booking_id) REFERENCES hospitalflow.appointment_bookings(id) |
+| hospitalflow | booking_events | booking_events_pkey | PRIMARY KEY (id) |
+| hospitalflow | booking_settings | booking_settings_fee_check | CHECK (((fee >= (200)::numeric) AND (fee <= (750)::numeric))) |
+| hospitalflow | booking_settings | booking_settings_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | booking_settings | booking_settings_pkey | PRIMARY KEY (hospital_id) |
 | hospitalflow | clinical_orders | clinical_orders_check | CHECK (((status = 'Completed'::text) = (completed_at IS NOT NULL))) |
 | hospitalflow | clinical_orders | clinical_orders_encounter_id_fkey | FOREIGN KEY (encounter_id) REFERENCES hospitalflow.encounters(id) |
+| hospitalflow | clinical_orders | clinical_orders_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | clinical_orders | clinical_orders_ordered_by_fkey | FOREIGN KEY (ordered_by) REFERENCES hospitalflow.users(id) |
 | hospitalflow | clinical_orders | clinical_orders_pkey | PRIMARY KEY (id) |
 | hospitalflow | clinical_orders | clinical_orders_service_id_fkey | FOREIGN KEY (service_id) REFERENCES hospitalflow.service_catalog(id) |
@@ -1151,25 +1622,34 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | discharge_tasks | discharge_tasks_admission_id_fkey | FOREIGN KEY (admission_id) REFERENCES hospitalflow.admissions(id) |
 | hospitalflow | discharge_tasks | discharge_tasks_check | CHECK (((completed_by IS NULL) = (completed_at IS NULL))) |
 | hospitalflow | discharge_tasks | discharge_tasks_completed_by_fkey | FOREIGN KEY (completed_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | discharge_tasks | discharge_tasks_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | discharge_tasks | discharge_tasks_pkey | PRIMARY KEY (id) |
 | hospitalflow | doctors | doctors_check | CHECK ((start < "end")) |
 | hospitalflow | doctors | doctors_department_fkey | FOREIGN KEY (department) REFERENCES hospitalflow.departments(name) |
+| hospitalflow | doctors | doctors_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | doctors | doctors_pkey | PRIMARY KEY (id) |
+| hospitalflow | doctors | doctors_registration_id_key | UNIQUE (registration_id) |
+| hospitalflow | email_changes | email_changes_password_fingerprint_check | CHECK ((length(password_fingerprint) = 64)) |
+| hospitalflow | email_changes | email_changes_pkey | PRIMARY KEY (token_hash) |
+| hospitalflow | email_changes | email_changes_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | encounters | encounters_admission_id_fkey | FOREIGN KEY (admission_id) REFERENCES hospitalflow.admissions(id) |
 | hospitalflow | encounters | encounters_admission_id_key | UNIQUE (admission_id) |
 | hospitalflow | encounters | encounters_appointment_id_fkey | FOREIGN KEY (appointment_id) REFERENCES hospitalflow.appointments(id) |
 | hospitalflow | encounters | encounters_appointment_id_key | UNIQUE (appointment_id) |
 | hospitalflow | encounters | encounters_check | CHECK ((((kind = 'Outpatient'::hospitalflow.encounter_kind) AND (appointment_id IS NOT NULL) AND (admission_id IS NULL)) OR ((kind = 'Inpatient'::hospitalflow.encounter_kind) AND (admission_id IS NOT NULL) AND (appointment_id IS NULL)))) |
 | hospitalflow | encounters | encounters_check1 | CHECK (((closed_at IS NULL) OR (closed_at >= opened_at))) |
+| hospitalflow | encounters | encounters_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | encounters | encounters_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | encounters | encounters_pkey | PRIMARY KEY (id) |
 | hospitalflow | encounters | encounters_status_check | CHECK ((status = ANY (ARRAY['Open'::text, 'Completed'::text, 'Cancelled'::text]))) |
 | hospitalflow | follow_ups | follow_ups_admission_id_fkey | FOREIGN KEY (admission_id) REFERENCES hospitalflow.admissions(id) |
 | hospitalflow | follow_ups | follow_ups_appointment_id_fkey | FOREIGN KEY (appointment_id) REFERENCES hospitalflow.appointments(id) |
 | hospitalflow | follow_ups | follow_ups_doctor_id_fkey | FOREIGN KEY (doctor_id) REFERENCES hospitalflow.doctors(id) |
+| hospitalflow | follow_ups | follow_ups_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | follow_ups | follow_ups_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | follow_ups | follow_ups_pkey | PRIMARY KEY (id) |
 | hospitalflow | follow_ups | follow_ups_status_check | CHECK ((status = ANY (ARRAY['Pending'::text, 'Booked'::text, 'Completed'::text, 'Cancelled'::text]))) |
+| hospitalflow | goods_receipt_lines | goods_receipt_lines_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | goods_receipt_lines | goods_receipt_lines_movement_id_fkey | FOREIGN KEY (movement_id) REFERENCES hospitalflow.stock_movements(id) |
 | hospitalflow | goods_receipt_lines | goods_receipt_lines_movement_id_key | UNIQUE (movement_id) |
 | hospitalflow | goods_receipt_lines | goods_receipt_lines_pkey | PRIMARY KEY (id) |
@@ -1177,55 +1657,81 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | goods_receipt_lines | goods_receipt_lines_quantity_check | CHECK ((quantity > 0)) |
 | hospitalflow | goods_receipt_lines | goods_receipt_lines_receipt_id_fkey | FOREIGN KEY (receipt_id) REFERENCES hospitalflow.goods_receipts(id) |
 | hospitalflow | goods_receipt_lines | goods_receipt_lines_receipt_id_purchase_order_line_id_key | UNIQUE (receipt_id, purchase_order_line_id) |
+| hospitalflow | goods_receipts | goods_receipts_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | goods_receipts | goods_receipts_pkey | PRIMARY KEY (id) |
 | hospitalflow | goods_receipts | goods_receipts_purchase_order_id_fkey | FOREIGN KEY (purchase_order_id) REFERENCES hospitalflow.purchase_orders(id) |
 | hospitalflow | goods_receipts | goods_receipts_purchase_order_id_reference_key | UNIQUE (purchase_order_id, reference) |
 | hospitalflow | goods_receipts | goods_receipts_received_by_fkey | FOREIGN KEY (received_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | hospital_memberships | hospital_memberships_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | hospital_memberships | hospital_memberships_pkey | PRIMARY KEY (user_id, hospital_id) |
+| hospitalflow | hospital_memberships | hospital_memberships_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | hospital_profile | hospital_profile_id_check | CHECK ((id = 1)) |
 | hospitalflow | hospital_profile | hospital_profile_name_check | CHECK (((length(TRIM(BOTH FROM name)) >= 1) AND (length(TRIM(BOTH FROM name)) <= 150))) |
 | hospitalflow | hospital_profile | hospital_profile_pkey | PRIMARY KEY (id) |
+| hospitalflow | hospitals | hospitals_name_check | CHECK (((length(name) >= 2) AND (length(name) <= 150))) |
+| hospitalflow | hospitals | hospitals_pkey | PRIMARY KEY (id) |
 | hospitalflow | idempotency_hash_keys | idempotency_hash_keys_id_check | CHECK ((id = 1)) |
 | hospitalflow | idempotency_hash_keys | idempotency_hash_keys_pkey | PRIMARY KEY (id) |
 | hospitalflow | idempotency_hash_keys | idempotency_hash_keys_secret_check | CHECK ((octet_length(secret) = 32)) |
+| hospitalflow | idempotency_keys | idempotency_keys_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | idempotency_keys | idempotency_keys_pkey | PRIMARY KEY (user_id, key) |
 | hospitalflow | idempotency_keys | idempotency_keys_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | integration_outbox | integration_outbox_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | integration_outbox | integration_outbox_payload_check | CHECK ((jsonb_typeof(payload) = 'object'::text)) |
 | hospitalflow | integration_outbox | integration_outbox_pkey | PRIMARY KEY (id) |
 | hospitalflow | integration_outbox | minimal_outbox_payload | CHECK (((payload - ARRAY['reference'::text, 'status'::text, 'kind'::text]) = '{}'::jsonb)) |
 | hospitalflow | invoice_line_context | invoice_line_context_check | CHECK ((num_nonnulls(service_price_id, medicine_id) = 1)) |
+| hospitalflow | invoice_line_context | invoice_line_context_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | invoice_line_context | invoice_line_context_line_id_fkey | FOREIGN KEY (line_id) REFERENCES hospitalflow.bill_lines(id) |
 | hospitalflow | invoice_line_context | invoice_line_context_medicine_id_fkey | FOREIGN KEY (medicine_id) REFERENCES hospitalflow.medicine_batches(id) |
 | hospitalflow | invoice_line_context | invoice_line_context_pkey | PRIMARY KEY (line_id) |
 | hospitalflow | invoice_line_context | invoice_line_context_quantity_check | CHECK ((quantity > (0)::numeric)) |
 | hospitalflow | invoice_line_context | invoice_line_context_service_price_id_fkey | FOREIGN KEY (service_price_id) REFERENCES hospitalflow.service_prices(id) |
 | hospitalflow | invoice_line_context | invoice_line_context_unit_price_check | CHECK ((unit_price > (0)::numeric)) |
+| hospitalflow | medication_administrations | medication_administrations_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | medication_administrations | medication_administrations_note_check | CHECK (((length(note) >= 1) AND (length(note) <= 1000))) |
+| hospitalflow | medication_administrations | medication_administrations_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
+| hospitalflow | medication_administrations | medication_administrations_pkey | PRIMARY KEY (id) |
+| hospitalflow | medication_administrations | medication_administrations_prescription_id_fkey | FOREIGN KEY (prescription_id) REFERENCES hospitalflow.prescriptions(id) |
+| hospitalflow | medication_administrations | medication_administrations_provided_by_fkey | FOREIGN KEY (provided_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | medication_administrations | medication_administrations_provided_by_retry_key_key | UNIQUE (provided_by, retry_key) |
+| hospitalflow | medication_administrations | medication_administrations_quantity_check | CHECK ((quantity > 0)) |
 | hospitalflow | medicine_batch_holds | medicine_batch_holds_check | CHECK (((released_by IS NULL) = (released_at IS NULL))) |
 | hospitalflow | medicine_batch_holds | medicine_batch_holds_check1 | CHECK (((released_at IS NULL) OR (released_at >= held_at))) |
 | hospitalflow | medicine_batch_holds | medicine_batch_holds_held_by_fkey | FOREIGN KEY (held_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | medicine_batch_holds | medicine_batch_holds_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | medicine_batch_holds | medicine_batch_holds_medicine_id_fkey | FOREIGN KEY (medicine_id) REFERENCES hospitalflow.medicine_batches(id) |
 | hospitalflow | medicine_batch_holds | medicine_batch_holds_pkey | PRIMARY KEY (id) |
 | hospitalflow | medicine_batch_holds | medicine_batch_holds_released_by_fkey | FOREIGN KEY (released_by) REFERENCES hospitalflow.users(id) |
-| hospitalflow | medicine_batches | medicine_batches_name_batch_key | UNIQUE (name, batch) |
+| hospitalflow | medicine_batches | medicine_batches_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | medicine_batches | medicine_batches_hospital_id_name_batch_key | UNIQUE (hospital_id, name, batch) |
 | hospitalflow | medicine_batches | medicine_batches_pkey | PRIMARY KEY (id) |
 | hospitalflow | medicine_batches | medicine_batches_price_check | CHECK ((price > (0)::numeric)) |
 | hospitalflow | medicine_batches | medicine_batches_quantity_check | CHECK ((quantity >= 0)) |
 | hospitalflow | medicine_batches | medicine_batches_reorder_check | CHECK ((reorder > 0)) |
 | hospitalflow | medicine_batches | stock_batch_balance | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | network_operators | network_operators_pkey | PRIMARY KEY (user_id) |
+| hospitalflow | network_operators | network_operators_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | notes | notes_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | notes | notes_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | notes | notes_pkey | PRIMARY KEY (id) |
 | hospitalflow | notes | notes_text_check | CHECK ((length(text) <= 4000)) |
+| hospitalflow | notification_acknowledgements | notification_acknowledgements_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | notification_acknowledgements | notification_acknowledgements_notification_id_fkey | FOREIGN KEY (notification_id) REFERENCES hospitalflow.notifications(id) |
 | hospitalflow | notification_acknowledgements | notification_acknowledgements_pkey | PRIMARY KEY (notification_id, user_id) |
 | hospitalflow | notification_acknowledgements | notification_acknowledgements_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | notifications | notifications_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | notifications | notifications_pkey | PRIMARY KEY (id) |
 | hospitalflow | outbox_delivery | outbox_delivery_attempts_check | CHECK ((attempts >= 0)) |
 | hospitalflow | outbox_delivery | outbox_delivery_check | CHECK (((status = 'Leased'::text) = ((lease_token IS NOT NULL) AND (lease_until IS NOT NULL)))) |
 | hospitalflow | outbox_delivery | outbox_delivery_check1 | CHECK (((status = 'Delivered'::text) = (delivered_at IS NOT NULL))) |
 | hospitalflow | outbox_delivery | outbox_delivery_event_id_fkey | FOREIGN KEY (event_id) REFERENCES hospitalflow.integration_outbox(id) |
+| hospitalflow | outbox_delivery | outbox_delivery_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | outbox_delivery | outbox_delivery_pkey | PRIMARY KEY (event_id) |
 | hospitalflow | outbox_delivery | outbox_delivery_status_check | CHECK ((status = ANY (ARRAY['Pending'::text, 'Leased'::text, 'Delivered'::text, 'Dead letter'::text]))) |
 | hospitalflow | patient_access_grants | patient_access_grants_check | CHECK ((expires_at > created_at)) |
 | hospitalflow | patient_access_grants | patient_access_grants_granted_by_fkey | FOREIGN KEY (granted_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | patient_access_grants | patient_access_grants_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | patient_access_grants | patient_access_grants_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | patient_access_grants | patient_access_grants_pkey | PRIMARY KEY (id) |
 | hospitalflow | patient_access_grants | patient_access_grants_purpose_check | CHECK (((length(TRIM(BOTH FROM purpose)) >= 1) AND (length(TRIM(BOTH FROM purpose)) <= 200))) |
@@ -1237,46 +1743,77 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | patient_accounts | patient_accounts_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | patient_consents | patient_consents_check | CHECK (((expires_at IS NULL) OR (expires_at > granted_at))) |
 | hospitalflow | patient_consents | patient_consents_check1 | CHECK (((revoked_at IS NULL) OR (revoked_at >= granted_at))) |
+| hospitalflow | patient_consents | patient_consents_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | patient_consents | patient_consents_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | patient_consents | patient_consents_pkey | PRIMARY KEY (id) |
 | hospitalflow | patient_consents | patient_consents_recorded_by_fkey | FOREIGN KEY (recorded_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | patient_contacts | contact_mobile_ten_digits | CHECK ((phone ~ '^[0-9]{10}$'::text)) |
+| hospitalflow | patient_contacts | patient_contacts_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | patient_contacts | patient_contacts_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | patient_contacts | patient_contacts_pkey | PRIMARY KEY (id) |
+| hospitalflow | patient_hospitals | patient_hospitals_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | patient_hospitals | patient_hospitals_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
+| hospitalflow | patient_hospitals | patient_hospitals_pkey | PRIMARY KEY (patient_id, hospital_id) |
+| hospitalflow | patient_login_challenges | first_login_challenge_user_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | patient_login_challenges | patient_login_challenges_attempts_check | CHECK (((attempts >= 0) AND (attempts <= 5))) |
 | hospitalflow | patient_login_challenges | patient_login_challenges_pkey | PRIMARY KEY (token_hash) |
 | hospitalflow | patient_login_challenges | patient_login_challenges_token_hash_check | CHECK ((length(token_hash) = 64)) |
-| hospitalflow | patient_login_challenges | patient_login_challenges_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.patient_accounts(user_id) |
 | hospitalflow | patient_sms | patient_sms_pkey | PRIMARY KEY (id) |
 | hospitalflow | patient_sms | patient_sms_status_check | CHECK ((status = ANY (ARRAY['Pending'::text, 'Local pickup'::text, 'Failed'::text]))) |
 | hospitalflow | patient_sms | patient_sms_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.patient_accounts(user_id) |
+| hospitalflow | patients | patient_contact_lengths | CHECK ((((address IS NULL) OR (length(address) <= 1000)) AND ((emergency_contact IS NULL) OR (length(emergency_contact) <= 200)))) |
+| hospitalflow | patients | patient_email_format | CHECK (((email IS NULL) OR ((length(email) <= 150) AND (email = lower(TRIM(BOTH FROM email))) AND (email ~ '^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'::text)))) |
+| hospitalflow | patients | patient_mobile_ten_digits | CHECK ((phone ~ '^[0-9]{10}$'::text)) |
 | hospitalflow | patients | patients_dob_check | CHECK ((dob >= '1900-01-01'::date)) |
+| hospitalflow | patients | patients_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | patients | patients_name_check | CHECK (((length(name) >= 1) AND (length(name) <= 100))) |
 | hospitalflow | patients | patients_phone_check | CHECK (((length(phone) >= 7) AND (length(phone) <= 20))) |
 | hospitalflow | patients | patients_pkey | PRIMARY KEY (id) |
+| hospitalflow | patients | patients_registration_id_key | UNIQUE (registration_id) |
 | hospitalflow | patients | patients_sex_check | CHECK ((sex = ANY (ARRAY['Male'::text, 'Female'::text, 'Other'::text, 'Prefer not to say'::text]))) |
 | hospitalflow | payment_reversals | payment_reversal_limit | TRIGGER DEFERRABLE INITIALLY DEFERRED |
 | hospitalflow | payment_reversals | payment_reversals_amount_check | CHECK ((amount > (0)::numeric)) |
 | hospitalflow | payment_reversals | payment_reversals_approved_by_fkey | FOREIGN KEY (approved_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | payment_reversals | payment_reversals_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | payment_reversals | payment_reversals_payment_id_fkey | FOREIGN KEY (payment_id) REFERENCES hospitalflow.payments(id) |
 | hospitalflow | payment_reversals | payment_reversals_pkey | PRIMARY KEY (id) |
 | hospitalflow | payment_reversals | payment_reversals_reason_check | CHECK (((length(TRIM(BOTH FROM reason)) >= 1) AND (length(TRIM(BOTH FROM reason)) <= 500))) |
 | hospitalflow | payments | payment_balance | TRIGGER DEFERRABLE INITIALLY DEFERRED |
 | hospitalflow | payments | payments_amount_check | CHECK ((amount > (0)::numeric)) |
 | hospitalflow | payments | payments_bill_id_fkey | FOREIGN KEY (bill_id) REFERENCES hospitalflow.bills(id) |
+| hospitalflow | payments | payments_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | payments | payments_method_check | CHECK ((method = ANY (ARRAY['Cash'::text, 'Card'::text, 'UPI'::text, 'Bank transfer'::text]))) |
 | hospitalflow | payments | payments_pkey | PRIMARY KEY (id) |
+| hospitalflow | person_profiles | person_profiles_address_check | CHECK ((length(address) <= 1000)) |
+| hospitalflow | person_profiles | person_profiles_department_fkey | FOREIGN KEY (department) REFERENCES hospitalflow.departments(name) |
+| hospitalflow | person_profiles | person_profiles_dob_check | CHECK ((dob >= '1900-01-01'::date)) |
+| hospitalflow | person_profiles | person_profiles_doctor_id_fkey | FOREIGN KEY (doctor_id) REFERENCES hospitalflow.doctors(id) |
+| hospitalflow | person_profiles | person_profiles_doctor_id_key | UNIQUE (doctor_id) |
+| hospitalflow | person_profiles | person_profiles_job_title_check | CHECK ((length(job_title) <= 100)) |
+| hospitalflow | person_profiles | person_profiles_occupation_check | CHECK ((occupation = ANY (ARRAY['Guard'::text, 'Washerman'::text, 'Housekeeping'::text, 'Other'::text]))) |
+| hospitalflow | person_profiles | person_profiles_pkey | PRIMARY KEY (user_id) |
+| hospitalflow | person_profiles | person_profiles_sex_check | CHECK ((sex = ANY (ARRAY['Male'::text, 'Female'::text, 'Other'::text, 'Prefer not to say'::text]))) |
+| hospitalflow | person_profiles | person_profiles_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | person_profiles | profile_mobile_ten_digits | CHECK (((mobile IS NULL) OR (mobile ~ '^[0-9]{10}$'::text))) |
 | hospitalflow | prescription_authors | prescription_authors_created_by_fkey | FOREIGN KEY (created_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | prescription_authors | prescription_authors_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | prescription_authors | prescription_authors_pkey | PRIMARY KEY (prescription_id) |
 | hospitalflow | prescription_authors | prescription_authors_prescription_id_fkey | FOREIGN KEY (prescription_id) REFERENCES hospitalflow.prescriptions(id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_bill_id_fkey | FOREIGN KEY (bill_id) REFERENCES hospitalflow.bills(id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_bill_id_key | UNIQUE (bill_id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_dispensed_by_fkey | FOREIGN KEY (dispensed_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | prescription_dispensations | prescription_dispensations_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_movement_id_fkey | FOREIGN KEY (movement_id) REFERENCES hospitalflow.stock_movements(id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_movement_id_key | UNIQUE (movement_id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_pkey | PRIMARY KEY (id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_prescription_id_fkey | FOREIGN KEY (prescription_id) REFERENCES hospitalflow.prescriptions(id) |
 | hospitalflow | prescription_dispensations | prescription_dispensations_prescription_id_key | UNIQUE (prescription_id) |
+| hospitalflow | prescription_visits | prescription_visits_appointment_id_fkey | FOREIGN KEY (appointment_id) REFERENCES hospitalflow.appointments(id) |
+| hospitalflow | prescription_visits | prescription_visits_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | prescription_visits | prescription_visits_pkey | PRIMARY KEY (prescription_id) |
+| hospitalflow | prescription_visits | prescription_visits_prescription_id_fkey | FOREIGN KEY (prescription_id) REFERENCES hospitalflow.prescriptions(id) |
 | hospitalflow | prescriptions | dispense_trace | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | prescriptions | prescriptions_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | prescriptions | prescriptions_medicine_id_fkey | FOREIGN KEY (medicine_id) REFERENCES hospitalflow.medicine_batches(id) |
 | hospitalflow | prescriptions | prescriptions_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | prescriptions | prescriptions_pkey | PRIMARY KEY (id) |
@@ -1285,12 +1822,15 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | provider_absences | provider_absences_approved_by_fkey | FOREIGN KEY (approved_by) REFERENCES hospitalflow.users(id) |
 | hospitalflow | provider_absences | provider_absences_check | CHECK ((ends_at > starts_at)) |
 | hospitalflow | provider_absences | provider_absences_doctor_id_fkey | FOREIGN KEY (doctor_id) REFERENCES hospitalflow.doctors(id) |
+| hospitalflow | provider_absences | provider_absences_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | provider_absences | provider_absences_pkey | PRIMARY KEY (id) |
 | hospitalflow | provider_sessions | provider_sessions_capacity_check | CHECK ((capacity = 1)) |
 | hospitalflow | provider_sessions | provider_sessions_check | CHECK ((ends_at > starts_at)) |
 | hospitalflow | provider_sessions | provider_sessions_doctor_id_fkey | FOREIGN KEY (doctor_id) REFERENCES hospitalflow.doctors(id) |
 | hospitalflow | provider_sessions | provider_sessions_doctor_id_starts_at_key | UNIQUE (doctor_id, starts_at) |
+| hospitalflow | provider_sessions | provider_sessions_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | provider_sessions | provider_sessions_pkey | PRIMARY KEY (id) |
+| hospitalflow | purchase_order_lines | purchase_order_lines_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | purchase_order_lines | purchase_order_lines_medicine_id_fkey | FOREIGN KEY (medicine_id) REFERENCES hospitalflow.medicine_batches(id) |
 | hospitalflow | purchase_order_lines | purchase_order_lines_pkey | PRIMARY KEY (id) |
 | hospitalflow | purchase_order_lines | purchase_order_lines_purchase_order_id_fkey | FOREIGN KEY (purchase_order_id) REFERENCES hospitalflow.purchase_orders(id) |
@@ -1300,60 +1840,109 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | purchase_orders | purchase_orders_approved_by_fkey | FOREIGN KEY (approved_by) REFERENCES hospitalflow.users(id) |
 | hospitalflow | purchase_orders | purchase_orders_check | CHECK (((status = ANY (ARRAY['Draft'::hospitalflow.purchase_status, 'Cancelled'::hospitalflow.purchase_status])) OR (approved_by IS NOT NULL))) |
 | hospitalflow | purchase_orders | purchase_orders_created_by_fkey | FOREIGN KEY (created_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | purchase_orders | purchase_orders_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | purchase_orders | purchase_orders_number_key | UNIQUE (number) |
 | hospitalflow | purchase_orders | purchase_orders_pkey | PRIMARY KEY (id) |
 | hospitalflow | purchase_orders | purchase_orders_supplier_id_fkey | FOREIGN KEY (supplier_id) REFERENCES hospitalflow.suppliers(id) |
+| hospitalflow | referrals | referral_destination | CHECK (((source_hospital_id <> target_hospital_id) OR (target_doctor_id IS NOT NULL))) |
+| hospitalflow | referrals | referrals_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
+| hospitalflow | referrals | referrals_pkey | PRIMARY KEY (id) |
+| hospitalflow | referrals | referrals_reason_check | CHECK (((length(TRIM(BOTH FROM reason)) >= 5) AND (length(TRIM(BOTH FROM reason)) <= 2000))) |
+| hospitalflow | referrals | referrals_referred_by_fkey | FOREIGN KEY (referred_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | referrals | referrals_resolved_by_fkey | FOREIGN KEY (resolved_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | referrals | referrals_source_hospital_id_fkey | FOREIGN KEY (source_hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | referrals | referrals_status_check | CHECK ((status = ANY (ARRAY['Pending'::text, 'Accepted'::text, 'Declined'::text, 'Cancelled'::text]))) |
+| hospitalflow | referrals | referrals_target_doctor_id_fkey | FOREIGN KEY (target_doctor_id) REFERENCES hospitalflow.doctors(id) |
+| hospitalflow | referrals | referrals_target_hospital_id_fkey | FOREIGN KEY (target_hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | roles | roles_pkey | PRIMARY KEY (name) |
+| hospitalflow | row_history | row_history_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | row_history | row_history_pkey | PRIMARY KEY (id) |
 | hospitalflow | schema_versions | schema_versions_pkey | PRIMARY KEY (version) |
 | hospitalflow | service_catalog | service_catalog_category_check | CHECK ((category = ANY (ARRAY['Consultation'::text, 'Room'::text, 'Laboratory'::text, 'Imaging'::text, 'Procedure'::text, 'Other'::text]))) |
-| hospitalflow | service_catalog | service_catalog_code_key | UNIQUE (code) |
 | hospitalflow | service_catalog | service_catalog_department_fkey | FOREIGN KEY (department) REFERENCES hospitalflow.departments(name) |
+| hospitalflow | service_catalog | service_catalog_hospital_id_code_key | UNIQUE (hospital_id, code) |
+| hospitalflow | service_catalog | service_catalog_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | service_catalog | service_catalog_pkey | PRIMARY KEY (id) |
 | hospitalflow | service_prices | service_prices_amount_check | CHECK ((amount > (0)::numeric)) |
 | hospitalflow | service_prices | service_prices_check | CHECK (((effective_to IS NULL) OR (effective_to > effective_from))) |
 | hospitalflow | service_prices | service_prices_created_by_fkey | FOREIGN KEY (created_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | service_prices | service_prices_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | service_prices | service_prices_pkey | PRIMARY KEY (id) |
 | hospitalflow | service_prices | service_prices_service_id_effective_from_key | UNIQUE (service_id, effective_from) |
 | hospitalflow | service_prices | service_prices_service_id_fkey | FOREIGN KEY (service_id) REFERENCES hospitalflow.service_catalog(id) |
 | hospitalflow | sessions | sessions_pkey | PRIMARY KEY (id) |
 | hospitalflow | sessions | sessions_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | staff_attendance | staff_attendance_approval_status_check | CHECK ((approval_status = ANY (ARRAY['Pending'::text, 'Approved'::text, 'Rejected'::text]))) |
+| hospitalflow | staff_attendance | staff_attendance_check | CHECK (((check_out IS NULL) OR (check_out >= check_in))) |
+| hospitalflow | staff_attendance | staff_attendance_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | staff_attendance | staff_attendance_hospital_id_user_id_day_key | UNIQUE (hospital_id, user_id, day) |
+| hospitalflow | staff_attendance | staff_attendance_marked_by_fkey | FOREIGN KEY (marked_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | staff_attendance | staff_attendance_pkey | PRIMARY KEY (id) |
+| hospitalflow | staff_attendance | staff_attendance_review_note_check | CHECK ((length(review_note) <= 500)) |
+| hospitalflow | staff_attendance | staff_attendance_reviewed_by_fkey | FOREIGN KEY (reviewed_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | staff_attendance | staff_attendance_status_check | CHECK ((status = ANY (ARRAY['Present'::text, 'Absent'::text]))) |
+| hospitalflow | staff_attendance | staff_attendance_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | staff_leaves | staff_leaves_check | CHECK (((ends_on >= starts_on) AND ((ends_on - starts_on) <= 90))) |
+| hospitalflow | staff_leaves | staff_leaves_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | staff_leaves | staff_leaves_pkey | PRIMARY KEY (id) |
+| hospitalflow | staff_leaves | staff_leaves_reason_check | CHECK (((length(reason) >= 5) AND (length(reason) <= 500))) |
+| hospitalflow | staff_leaves | staff_leaves_resolved_by_fkey | FOREIGN KEY (resolved_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | staff_leaves | staff_leaves_status_check | CHECK ((status = ANY (ARRAY['Pending'::text, 'Approved'::text, 'Rejected'::text, 'Cancelled'::text]))) |
+| hospitalflow | staff_leaves | staff_leaves_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | staff_members | staff_members_department_fkey | FOREIGN KEY (department) REFERENCES hospitalflow.departments(name) |
 | hospitalflow | staff_members | staff_members_doctor_id_fkey | FOREIGN KEY (doctor_id) REFERENCES hospitalflow.doctors(id) |
 | hospitalflow | staff_members | staff_members_doctor_id_key | UNIQUE (doctor_id) |
-| hospitalflow | staff_members | staff_members_employee_number_key | UNIQUE (employee_number) |
+| hospitalflow | staff_members | staff_members_hospital_id_employee_number_key | UNIQUE (hospital_id, employee_number) |
+| hospitalflow | staff_members | staff_members_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | staff_members | staff_members_pkey | PRIMARY KEY (id) |
 | hospitalflow | staff_members | staff_members_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | staff_members | staff_members_user_id_key | UNIQUE (user_id) |
+| hospitalflow | staff_onboarding | staff_onboarding_check | CHECK ((must_change_password OR (activated_at IS NOT NULL))) |
+| hospitalflow | staff_onboarding | staff_onboarding_pkey | PRIMARY KEY (user_id) |
+| hospitalflow | staff_onboarding | staff_onboarding_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | stock_movements | stock_movement_balance | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | stock_movements | stock_movements_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | stock_movements | stock_movements_medicine_id_fkey | FOREIGN KEY (medicine_id) REFERENCES hospitalflow.medicine_batches(id) |
 | hospitalflow | stock_movements | stock_movements_pkey | PRIMARY KEY (id) |
 | hospitalflow | stock_movements | stock_movements_quantity_check | CHECK ((quantity <> 0)) |
 | hospitalflow | stock_reservations | reservation_stock_balance | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | stock_reservations | stock_reservations_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | stock_reservations | stock_reservations_medicine_id_fkey | FOREIGN KEY (medicine_id) REFERENCES hospitalflow.medicine_batches(id) |
 | hospitalflow | stock_reservations | stock_reservations_pkey | PRIMARY KEY (id) |
 | hospitalflow | stock_reservations | stock_reservations_prescription_id_fkey | FOREIGN KEY (prescription_id) REFERENCES hospitalflow.prescriptions(id) |
 | hospitalflow | stock_reservations | stock_reservations_prescription_id_key | UNIQUE (prescription_id) |
 | hospitalflow | stock_reservations | stock_reservations_quantity_check | CHECK ((quantity > 0)) |
 | hospitalflow | stock_reservations | stock_reservations_status_check | CHECK ((status = ANY (ARRAY['Active'::text, 'Consumed'::text, 'Released'::text]))) |
-| hospitalflow | suppliers | suppliers_code_key | UNIQUE (code) |
+| hospitalflow | suppliers | supplier_mobile_ten_digits | CHECK (((contact_phone IS NULL) OR (contact_phone ~ '^[0-9]{10}$'::text))) |
+| hospitalflow | suppliers | suppliers_hospital_id_code_key | UNIQUE (hospital_id, code) |
+| hospitalflow | suppliers | suppliers_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | suppliers | suppliers_pkey | PRIMARY KEY (id) |
 | hospitalflow | system_settings | system_settings_pkey | PRIMARY KEY (key) |
 | hospitalflow | user_departments | user_departments_department_fkey | FOREIGN KEY (department) REFERENCES hospitalflow.departments(name) |
+| hospitalflow | user_departments | user_departments_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | user_departments | user_departments_pkey | PRIMARY KEY (user_id, department) |
 | hospitalflow | user_departments | user_departments_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | user_permissions | user_permissions_permission_check | CHECK ((permission = ANY (ARRAY['Reception'::text, 'Doctor'::text, 'Nurse'::text, 'Pharmacist'::text, 'Billing'::text]))) |
 | hospitalflow | user_permissions | user_permissions_pkey | PRIMARY KEY (user_id, permission) |
 | hospitalflow | user_permissions | user_permissions_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
+| hospitalflow | user_preferences | user_preferences_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | user_preferences | user_preferences_pkey | PRIMARY KEY (user_id) |
 | hospitalflow | user_preferences | user_preferences_theme_check | CHECK ((theme = ANY (ARRAY['Default'::text, 'Dark'::text]))) |
 | hospitalflow | user_preferences | user_preferences_user_id_fkey | FOREIGN KEY (user_id) REFERENCES hospitalflow.users(id) |
 | hospitalflow | users | users_name_check | CHECK (((length(name) >= 1) AND (length(name) <= 100))) |
 | hospitalflow | users | users_pkey | PRIMARY KEY (id) |
+| hospitalflow | users | users_registration_id_key | UNIQUE (registration_id) |
 | hospitalflow | users | users_role_fkey | FOREIGN KEY (role) REFERENCES hospitalflow.roles(name) |
 | hospitalflow | wards | wards_department_fkey | FOREIGN KEY (department) REFERENCES hospitalflow.departments(name) |
 | hospitalflow | wards | wards_name_check | CHECK (((length(name) >= 1) AND (length(name) <= 100))) |
 | hospitalflow | wards | wards_pkey | PRIMARY KEY (name) |
+| hospitalflow | work_tasks | work_tasks_assigned_to_fkey | FOREIGN KEY (assigned_to) REFERENCES hospitalflow.users(id) |
+| hospitalflow | work_tasks | work_tasks_created_by_fkey | FOREIGN KEY (created_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | work_tasks | work_tasks_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | work_tasks | work_tasks_location_check | CHECK (((length(location) >= 1) AND (length(location) <= 150))) |
+| hospitalflow | work_tasks | work_tasks_pkey | PRIMARY KEY (id) |
+| hospitalflow | work_tasks | work_tasks_status_check | CHECK ((status = ANY (ARRAY['Assigned'::text, 'In progress'::text, 'Completed'::text]))) |
+| hospitalflow | work_tasks | work_tasks_title_check | CHECK (((length(title) >= 2) AND (length(title) <= 150))) |
 
 ## Database job definitions
 

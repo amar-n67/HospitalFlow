@@ -7,18 +7,19 @@ using Npgsql;
 
 static class Access {
     public static readonly string[] Permissions=["Reception","Doctor","Nurse","Pharmacist","Billing"];
+    public static readonly string[] ClinicalActions=["prescription","cancel-prescription","note","clinical-order","clinical-order-status","complete-clinical-order","follow-up"];
     public static bool Full(string? role)=>role is "Admin" or "Developer";
 }
-record AccountInfo(string Id,string Name,string Email,string Role,bool Active,bool EmailConfirmed,string[] Permissions);
+record AccountInfo(string Id,string Name,string Email,string Role,bool Active,bool EmailConfirmed,string[] Permissions,string? RegistrationId=null);
 record MailMessageData(string To,string Subject,string Body);
 sealed partial class Store {
     public async Task<string[]> Permissions(string id) {
-        await using var c=await Open();await using var cmd=new NpgsqlCommand("SELECT permission FROM hospitalflow.user_permissions WHERE user_id=$1 ORDER BY permission",c);cmd.Parameters.AddWithValue(id);
+        await using var c=await Open();await using var cmd=new NpgsqlCommand("SELECT permission FROM hospitalflow.user_permissions WHERE user_id=$1 AND NOT EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=$1 AND role='Volunteer') UNION SELECT role FROM hospitalflow.users WHERE id=$1 AND role IN ('Doctor','Nurse') ORDER BY 1",c);cmd.Parameters.AddWithValue(id);
         await using var r=await cmd.ExecuteReaderAsync();var list=new List<string>();while(await r.ReadAsync())list.Add(r.GetString(0));return list.ToArray();
     }
     public async Task<List<AccountInfo>> Accounts() {
-        await using var c=await Open();await using var cmd=new NpgsqlCommand("SELECT u.id,u.name,u.email,u.role,u.active,u.email_confirmed,ARRAY(SELECT permission FROM hospitalflow.user_permissions p WHERE p.user_id=u.id ORDER BY permission) FROM hospitalflow.users u ORDER BY u.created_at DESC",c);
-        await using var r=await cmd.ExecuteReaderAsync();var result=new List<AccountInfo>();while(await r.ReadAsync())result.Add(new(r.GetString(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetBoolean(4),r.GetBoolean(5),r.GetFieldValue<string[]>(6)));return result;
+        await using var c=await Open();await using var cmd=new NpgsqlCommand("SELECT u.id,u.name,u.email,u.role,u.active,u.email_confirmed,ARRAY(SELECT permission FROM hospitalflow.user_permissions p WHERE p.user_id=u.id UNION SELECT u.role WHERE u.role IN ('Doctor','Nurse') ORDER BY 1),u.registration_id FROM hospitalflow.users u WHERE EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships m WHERE m.user_id=u.id AND m.hospital_id=hf_security.current_hospital() AND m.active) ORDER BY u.created_at DESC",c);
+        await using var r=await cmd.ExecuteReaderAsync();var result=new List<AccountInfo>();while(await r.ReadAsync())result.Add(new(r.GetString(0),r.GetString(1),r.GetString(2),r.GetString(3),r.GetBoolean(4),r.GetBoolean(5),r.GetFieldValue<string[]>(6),r.GetString(7)));return result;
     }
     public async Task Register(string name,string email,string password,AuditContext audit,IDataProtector protector) {
         name=name.Trim();email=AccountValidation.Email(email);AccountValidation.Password(password,name,email);if(name.Length is <2 or >100)throw new RuleException("Enter your full name (2–100 characters).");
@@ -62,21 +63,27 @@ sealed partial class Store {
             var user=(await new RowMap<User>("users").Read(c,tx,"WHERE id=$1",id)).Single();
             AccountValidation.Password(password!,user.Name,user.Email);
             await Sql(c,tx,"UPDATE hospitalflow.users SET password_hash=$1 WHERE id=$2",new PasswordHasher<User>().HashPassword(new User(),password!),id);
+            await Sql(c,tx,"UPDATE hospitalflow.staff_onboarding SET expires_at=now()+interval '24 hours' WHERE user_id=$1 AND must_change_password",id);
             await Sql(c,tx,"DELETE FROM hospitalflow.sessions WHERE user_id=$1",id);
         }
         await Sql(c,tx,"UPDATE hospitalflow.account_tokens SET consumed_at=now() WHERE user_id=$1 AND purpose=$2 AND consumed_at IS NULL",id,purpose);
         await new RowMap<Audit>("activity_log").Save(c,tx,[audit.Event(purpose=="verify"?"email-verified":"password-reset",id)],[]);await tx.CommitAsync();
     }
     public async Task ManageAccount(AccountInfo input,AuditContext audit) {
+        if(await UserHasOtherHospitals(input.Id)&&!await NetworkOperator(audit.ActorId!))throw new RuleException("A network operator must manage an account shared by multiple hospitals.");
+        if(await NetworkOperator(input.Id)&&!await NetworkOperator(audit.ActorId!))throw new RuleException("Only a network operator can manage this account.");
+        if(!await UserInHospital(input.Id))throw new RuleException("Account is outside this hospital.");
+        if(input.Role=="Developer"&&!await NetworkOperator(audit.ActorId!))throw new RuleException("Only a network operator can assign Developer access.");
         if(input.Id==audit.ActorId)throw new RuleException("Ask another administrator to change your own role or access.");
-        if(input.Role is not ("User" or "Admin" or "Developer")||input.Permissions.Any(p=>!Access.Permissions.Contains(p)))throw new RuleException("Choose a valid role and permissions.");
+        if(input.Role is not ("User" or "Admin" or "Developer" or "Doctor" or "Nurse" or "Volunteer")||input.Permissions.Any(p=>!Access.Permissions.Contains(p)))throw new RuleException("Choose a valid role and permissions.");
+        if(input.Role!="Doctor"&&input.Role!="Developer"&&input.Permissions.Contains("Doctor"))throw new RuleException("Choose the separate Doctor role for clinical access.");
         if(await PatientAccount(input.Id)!=null&&(input.Role!="User"||input.Permissions.Length>0))throw new RuleException("Patient accounts cannot receive staff access. Use a separate staff identity.");
         await using var c=await Open();await using var tx=await c.BeginTransactionAsync();
         await Sql(c,tx,"SELECT pg_advisory_xact_lock(74192301),set_config('hospitalflow.actor_id',$1,true),set_config('hospitalflow.correlation_id',$2,true)",audit.ActorId!,audit.CorrelationId);
         await Sql(c,tx,"SELECT hf_security.require_actor(ARRAY[]::text[])");
         await using(var exists=new NpgsqlCommand("SELECT EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=$1)",c,tx)){exists.Parameters.AddWithValue(input.Id);if(!(bool)(await exists.ExecuteScalarAsync())!)throw new RuleException("Account not found.");}
-        await Sql(c,tx,"UPDATE hospitalflow.users SET role=$1,active=$2 WHERE id=$3",input.Role,input.Active,input.Id);
         await Sql(c,tx,"DELETE FROM hospitalflow.user_permissions WHERE user_id=$1",input.Id);
+        await Sql(c,tx,"UPDATE hospitalflow.users SET role=$1,active=$2 WHERE id=$3",input.Role,input.Active,input.Id);
         if(input.Role=="User")foreach(var permission in input.Permissions.Distinct())await Sql(c,tx,"INSERT INTO hospitalflow.user_permissions VALUES($1,$2)",input.Id,permission);
         await Sql(c,tx,"DELETE FROM hospitalflow.sessions WHERE user_id=$1",input.Id);
         await Sql(c,tx,"UPDATE hospitalflow.account_tokens SET consumed_at=now() WHERE user_id=$1 AND purpose='reset' AND consumed_at IS NULL",input.Id);

@@ -26,7 +26,7 @@ sealed partial class Store : IDisposable
     public void Dispose() => source.Dispose();
     public async ValueTask<NpgsqlConnection> Open() {
         var c=await source.OpenConnectionAsync();
-        try{await Sql(c,null,"SELECT set_config('TimeZone',$1,false)",HospitalTimezone);return c;}
+        try{await Sql(c,null,"SELECT set_config('TimeZone',$1,false),set_config('hospitalflow.hospital_id',$2,false),set_config('hospitalflow.actor_id',$3,false),set_config('hospitalflow.patient_id',$4,false)",HospitalTimezone,ContextHospital?.HospitalId??"H-0001",ContextHospital?.UserId??"",ContextHospital?.PatientId??"");return c;}
         catch{await c.DisposeAsync();throw;}
     }
     public string RequestHash(string text)=>Convert.ToHexString(HMACSHA256.HashData(requestHashKey,Encoding.UTF8.GetBytes(text)));
@@ -85,8 +85,8 @@ sealed partial class Store : IDisposable
             var opening=medicine.Quantity-next.Movements.Where(x=>x.MedicineId==medicine.Id).Sum(x=>x.Quantity);
             if(opening!=0)next.Movements.Add(new("OPEN-"+Guid.NewGuid().ToString("N"),medicine.Id,opening,"Opening balance carried from initial import",DateTimeOffset.UtcNow));
         }
-        var legacyPermissions=next.Users.Where(u=>u.Role is not ("Admin" or "Developer" or "User")).Select(u=>(u.Id,u.Role)).ToList();
-        foreach(var u in next.Users)if(u.Role is not ("Admin" or "Developer" or "User"))u.Role=u.Role=="Administrator"?"Admin":"User";
+        var legacyPermissions=next.Users.Where(u=>u.Role is not ("Admin" or "Developer" or "User" or "Doctor" or "Nurse" or "Volunteer")).Select(u=>(u.Id,u.Role)).ToList();
+        foreach(var u in next.Users)if(u.Role is not ("Admin" or "Developer" or "User" or "Doctor" or "Nurse" or "Volunteer"))u.Role=u.Role=="Administrator"?"Admin":"User";
         await Persist(c,tx,next,old);
         foreach(var (id,permission) in legacyPermissions.Where(x=>x.Role!="Administrator"))
             await Sql(c,tx,"INSERT INTO hospitalflow.user_permissions VALUES($1,$2) ON CONFLICT DO NOTHING",id,permission);
@@ -148,8 +148,13 @@ sealed partial class Store : IDisposable
     }
     public async Task<string> Change(string action,JsonElement payload,AuditContext audit,string? key,string requestHash,IDataProtectionProvider? protection=null)
     {
+        if(action is "hospital-profile" or "ward-department"&&!await NetworkOperator(audit.ActorId!))throw new RuleException("This shared network setting requires a network operator.");
         if(!Guid.TryParse(key,out var keyId))throw new RuleException("A valid Idempotency-Key header is required for changes.");
+        if(action=="user-status"&&payload.TryGetProperty("id",out var sharedTarget)&&await UserHasOtherHospitals(sharedTarget.GetString()!)&&!await NetworkOperator(audit.ActorId!))throw new RuleException("A network operator must manage an account shared by multiple hospitals.");
+        if(action=="user-status"&&payload.TryGetProperty("id",out var protectedTarget)&&await NetworkOperator(protectedTarget.GetString()!)&&!await NetworkOperator(audit.ActorId!))throw new RuleException("Only a network operator can manage this account.");
+        if(action=="user-status"&&payload.TryGetProperty("id",out var targetUser)&&!await UserInHospital(targetUser.GetString()!))throw new RuleException("Account is outside this hospital.");
         if(action=="user") {
+            if(payload.TryGetProperty("role",out var requestedRole)&&requestedRole.GetString()=="Developer"&&!await NetworkOperator(audit.ActorId!))throw new RuleException("Only a network operator can create Developer access.");
             if(!payload.TryGetProperty("password",out var password)||password.ValueKind!=JsonValueKind.String)
                 throw new RuleException("Enter a password.");
             if(!payload.TryGetProperty("name",out var accountName)||accountName.ValueKind!=JsonValueKind.String||!payload.TryGetProperty("email",out var accountEmail)||accountEmail.ValueKind!=JsonValueKind.String)throw new RuleException("Name and email are required.");
@@ -160,10 +165,13 @@ sealed partial class Store : IDisposable
             fields["passwordHash"]=JsonSerializer.SerializeToElement(new PasswordHasher<User>().HashPassword(new User(),password.GetString()!));
             payload=JsonSerializer.SerializeToElement(fields);
         }
-        string? patientEmail=null;
+        if(payload.TryGetProperty("phone",out var contactPhone)&&contactPhone.ValueKind==JsonValueKind.String)Mobile(contactPhone.GetString()!);
+        string? patientEmail=null,initialPatientPassword=null;
         if(action=="patient"||(action=="patient-update"&&payload.TryGetProperty("email",out _))) {
             if(!payload.TryGetProperty("email",out var emailValue)||emailValue.ValueKind!=JsonValueKind.String)throw new RuleException("Patient email is required for patient access.");
             patientEmail=AccountValidation.Email(emailValue.GetString()!);
+            // Initial credentials are set server-side; never accept a registration password.
+            payload=JsonSerializer.SerializeToElement(payload.EnumerateObject().Where(x=>x.Name!="initialPassword").ToDictionary(x=>x.Name,x=>x.Value.Clone()));
             if(protection==null)throw new InvalidOperationException("Patient invitation protection is required.");
         }
         await using var c=await Open();await using var tx=await c.BeginTransactionAsync();
@@ -171,7 +179,7 @@ sealed partial class Store : IDisposable
         await using var cmd=new NpgsqlCommand("SELECT hf_api.execute($1,$2::jsonb,$3,$4)",c,tx);
         cmd.Parameters.AddWithValue(action);cmd.Parameters.AddWithValue(payload.GetRawText());cmd.Parameters.AddWithValue(keyId);cmd.Parameters.AddWithValue(requestHash);
         var reference=(string)(await cmd.ExecuteScalarAsync())!;
-        if(patientEmail!=null)await ProvisionPatient(c,tx,reference,patientEmail,protection!.CreateProtector("HospitalFlow.AccountMail.v1"),protection.CreateProtector("HospitalFlow.PatientSms.v1"),audit);
+        if(patientEmail!=null)await ProvisionPatient(c,tx,reference,patientEmail,protection!.CreateProtector("HospitalFlow.AccountMail.v1"),protection.CreateProtector("HospitalFlow.PatientSms.v1"),audit,initialPassword:initialPatientPassword);
         await tx.CommitAsync();return reference;
     }
     public async Task Log(Audit entry)

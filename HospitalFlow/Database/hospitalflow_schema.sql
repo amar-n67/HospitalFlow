@@ -977,5 +977,730 @@ CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.u
 REVOKE ALL ON hospitalflow.user_preferences FROM PUBLIC;
 
 INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.011_patient_portal.sql','1CD28579F242D97D8B1C6F78E5EE2E42F84DC5ED4E3D3210CDB17F4FA1E38698');
+
+-- 012_people_roles_and_registration.sql
+INSERT INTO hospitalflow.roles(name) VALUES('Doctor'),('Nurse'),('Volunteer') ON CONFLICT DO NOTHING;
+CREATE SEQUENCE hospitalflow.person_number START 1000;
+CREATE FUNCTION hf_api.person_id(p_prefix text) RETURNS text LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,pg_temp AS $$
+DECLARE serial text;BEGIN IF p_prefix NOT IN ('P','D','N','V','A','DEV','U') THEN RAISE EXCEPTION 'Unknown registration type' USING ERRCODE='23514';END IF;
+ serial:=nextval('hospitalflow.person_number')::text;RETURN p_prefix||'-'||lpad(serial,greatest(6,length(serial)),'0');END $$;
+ALTER TABLE hospitalflow.patients ADD COLUMN registration_id text UNIQUE,ADD COLUMN email text,ADD COLUMN address text,ADD COLUMN emergency_contact text;
+UPDATE hospitalflow.patients SET registration_id=hf_api.person_id('P');
+UPDATE hospitalflow.patients p SET email=u.email FROM hospitalflow.patient_accounts a JOIN hospitalflow.users u ON u.id=a.user_id WHERE p.id=a.patient_id;
+ALTER TABLE hospitalflow.patients ALTER COLUMN registration_id SET NOT NULL;
+ALTER TABLE hospitalflow.patients ADD CONSTRAINT patient_email_format CHECK(email IS NULL OR(length(email)<=150 AND email=lower(trim(email)) AND email~'^[^[:space:]@]+@[^[:space:]@]+\.[^[:space:]@]+$'));
+CREATE UNIQUE INDEX patient_email_unique ON hospitalflow.patients(lower(email)) WHERE email IS NOT NULL;
+ALTER TABLE hospitalflow.patients ADD CONSTRAINT patient_contact_lengths CHECK((address IS NULL OR length(address)<=1000) AND(emergency_contact IS NULL OR length(emergency_contact)<=200));
+ALTER TABLE hospitalflow.doctors ADD COLUMN registration_id text UNIQUE;
+UPDATE hospitalflow.doctors SET registration_id=hf_api.person_id('D');
+ALTER TABLE hospitalflow.doctors ALTER COLUMN registration_id SET NOT NULL;
+UPDATE hospitalflow.users u SET role=CASE WHEN EXISTS(SELECT 1 FROM hospitalflow.user_permissions p WHERE p.user_id=u.id AND permission='Doctor') THEN 'Doctor' ELSE 'Nurse' END
+ WHERE role='User' AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts a WHERE a.user_id=u.id) AND EXISTS(SELECT 1 FROM hospitalflow.user_permissions p WHERE p.user_id=u.id AND permission IN ('Doctor','Nurse'));
+ALTER TABLE hospitalflow.users ADD COLUMN registration_id text UNIQUE;
+UPDATE hospitalflow.users SET registration_id=hf_api.person_id(CASE role WHEN 'Admin' THEN 'A' WHEN 'Developer' THEN 'DEV' WHEN 'Doctor' THEN 'D' WHEN 'Nurse' THEN 'N' WHEN 'Volunteer' THEN 'V' ELSE 'U' END);
+UPDATE hospitalflow.users u SET registration_id=p.registration_id FROM hospitalflow.patient_accounts a JOIN hospitalflow.patients p ON p.id=a.patient_id WHERE u.id=a.user_id;
+ALTER TABLE hospitalflow.users ALTER COLUMN registration_id SET NOT NULL;
+CREATE TABLE hospitalflow.person_profiles(
+ user_id text PRIMARY KEY REFERENCES hospitalflow.users(id),doctor_id text UNIQUE REFERENCES hospitalflow.doctors(id),
+ mobile text CHECK(mobile IS NULL OR mobile~'^\+[0-9]{7,15}$'),dob date CHECK(dob>=date '1900-01-01'),
+ sex text CHECK(sex IN ('Male','Female','Other','Prefer not to say')),address text CHECK(length(address)<=1000),
+ department text REFERENCES hospitalflow.departments(name),job_title text CHECK(length(job_title)<=100),
+ occupation text CHECK(occupation IN ('Guard','Washerman','Housekeeping','Other')),created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO hospitalflow.person_profiles(user_id) SELECT id FROM hospitalflow.users WHERE NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts a WHERE a.user_id=users.id);
+CREATE FUNCTION hf_security.registration_identity() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE prefix text;expected text;BEGIN
+ IF TG_TABLE_NAME='patients' THEN prefix:='P';
+ ELSIF TG_TABLE_NAME='doctors' THEN prefix:='D';
+ ELSE prefix:=CASE NEW.role WHEN 'Admin' THEN 'A' WHEN 'Developer' THEN 'DEV' WHEN 'Doctor' THEN 'D' WHEN 'Nurse' THEN 'N' WHEN 'Volunteer' THEN 'V' ELSE 'U' END;
+  IF TG_OP='UPDATE' AND OLD.role<>NEW.role THEN NEW.registration_id:=hf_api.person_id(prefix);END IF;
+  SELECT p.registration_id INTO expected FROM hospitalflow.patient_accounts a JOIN hospitalflow.patients p ON p.id=a.patient_id WHERE a.user_id=NEW.id;
+  IF expected IS NOT NULL THEN IF NEW.registration_id IS DISTINCT FROM expected THEN RAISE EXCEPTION 'Patient and account registration IDs must match' USING ERRCODE='23514';END IF;prefix:='P';END IF;
+ END IF;
+ IF NEW.registration_id IS NULL THEN NEW.registration_id:=hf_api.person_id(prefix);END IF;
+ IF TG_OP='UPDATE' AND TG_TABLE_NAME IN ('patients','doctors') AND OLD.registration_id<>NEW.registration_id THEN RAISE EXCEPTION 'Registration ID is immutable' USING ERRCODE='23514';END IF;
+ IF NEW.registration_id!~('^'||prefix||'-[0-9]+$') THEN RAISE EXCEPTION 'Invalid registration prefix' USING ERRCODE='23514';END IF;RETURN NEW;END $$;
+CREATE TRIGGER registration_identity BEFORE INSERT OR UPDATE ON hospitalflow.patients FOR EACH ROW EXECUTE FUNCTION hf_security.registration_identity();
+CREATE TRIGGER registration_identity BEFORE INSERT OR UPDATE ON hospitalflow.doctors FOR EACH ROW EXECUTE FUNCTION hf_security.registration_identity();
+CREATE TRIGGER registration_identity BEFORE INSERT OR UPDATE ON hospitalflow.users FOR EACH ROW EXECUTE FUNCTION hf_security.registration_identity();
+CREATE FUNCTION hospitalflow.sync_patient_registration() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$
+BEGIN UPDATE hospitalflow.users SET registration_id=(SELECT registration_id FROM hospitalflow.patients WHERE id=NEW.patient_id) WHERE id=NEW.user_id;RETURN NEW;END $$;
+CREATE TRIGGER sync_registration AFTER INSERT ON hospitalflow.patient_accounts FOR EACH ROW EXECUTE FUNCTION hospitalflow.sync_patient_registration();
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.person_profiles FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+CREATE FUNCTION hf_security.validate_person_profile() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,pg_temp AS $$
+BEGIN IF NEW.dob>current_date THEN RAISE EXCEPTION 'Date of birth cannot be in the future' USING ERRCODE='23514';END IF;RETURN NEW;END $$;
+CREATE TRIGGER validate_profile BEFORE INSERT OR UPDATE ON hospitalflow.person_profiles FOR EACH ROW EXECUTE FUNCTION hf_security.validate_person_profile();
+CREATE OR REPLACE FUNCTION hf_security.require_actor(p_roles text[]) RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$
+DECLARE u hospitalflow.users%ROWTYPE;BEGIN
+ SELECT * INTO u FROM hospitalflow.users WHERE id=nullif(current_setting('hospitalflow.actor_id',true),'') AND active AND email_confirmed;
+ IF NOT FOUND OR EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=u.id) OR u.role='Volunteer' OR
+ (u.role NOT IN ('Admin','Developer') AND NOT(u.role=ANY(p_roles)) AND NOT EXISTS(SELECT 1 FROM hospitalflow.user_permissions p WHERE p.user_id=u.id AND p.permission=ANY(p_roles))) THEN
+ RAISE EXCEPTION 'Active authorized staff identity required' USING ERRCODE='42501';END IF;RETURN u.id;END $$;
+CREATE OR REPLACE FUNCTION hf_security.protect_account() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,pg_temp AS $$
+BEGIN PERFORM pg_advisory_xact_lock(74192301);
+ IF NEW.active AND NOT NEW.email_confirmed THEN RAISE EXCEPTION 'Verify email before account approval' USING ERRCODE='23514';END IF;
+ IF TG_OP='UPDATE' AND OLD.active AND OLD.role IN ('Admin','Developer') AND (NOT NEW.active OR NEW.role NOT IN ('Admin','Developer')) AND NOT EXISTS(SELECT 1 FROM hospitalflow.users WHERE id<>OLD.id AND active AND role IN ('Admin','Developer')) THEN RAISE EXCEPTION 'An active full-access account must remain' USING ERRCODE='23514';END IF;
+ RETURN NEW;END $$;
+-- Name/contact updates cannot silently move a linked login to another email.
+CREATE FUNCTION hf_security.patient_email_guard() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$
+BEGIN IF EXISTS(SELECT 1 FROM hospitalflow.patient_accounts a JOIN hospitalflow.users u ON u.id=a.user_id WHERE a.patient_id=NEW.id AND u.email IS DISTINCT FROM NEW.email) THEN RAISE EXCEPTION 'Linked patient email requires identity-reviewed account change' USING ERRCODE='23514';END IF;RETURN NEW;END $$;
+CREATE TRIGGER linked_email BEFORE UPDATE OF email ON hospitalflow.patients FOR EACH ROW EXECUTE FUNCTION hf_security.patient_email_guard();
+DO $$ DECLARE definition text;BEGIN
+ SELECT pg_get_functiondef('hf_api.save_patient(text,text,date,text,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,'INSERT INTO hospitalflow.patients VALUES(', 'INSERT INTO hospitalflow.patients(id,name,dob,sex,phone,created) VALUES(');EXECUTE definition;
+ SELECT pg_get_functiondef('hf_api.execute(text,jsonb,uuid,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,' WHEN ''doctor'' THEN',' UPDATE hospitalflow.patients SET email=COALESCE(p_payload->>''email'',email),address=COALESCE(p_payload->>''address'',address),emergency_contact=COALESCE(p_payload->>''emergencyContact'',emergency_contact) WHERE id=result; WHEN ''doctor'' THEN');
+ EXECUTE definition;
+END $$;
+REVOKE EXECUTE ON FUNCTION hf_api.person_id(text),hf_security.registration_identity(),hf_security.validate_person_profile(),hf_security.patient_email_guard(),hospitalflow.sync_patient_registration() FROM PUBLIC;
+REVOKE ALL ON hospitalflow.person_profiles FROM PUBLIC;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.012_people_roles_and_registration.sql','FA08BE18E18A8A15C7FA62BD2B5AC47C39E7B176104150943E46812ED233B9FE');
+
+-- 013_role_workspaces.sql
+CREATE TABLE hospitalflow.email_changes(
+ token_hash text PRIMARY KEY,user_id text NOT NULL REFERENCES hospitalflow.users(id),
+ email text NOT NULL,password_fingerprint text NOT NULL CHECK(length(password_fingerprint)=64),expires_at timestamptz NOT NULL,consumed_at timestamptz,created_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX email_changes_user ON hospitalflow.email_changes(user_id,created_at);
+CREATE TABLE hospitalflow.work_tasks(
+ id text PRIMARY KEY,assigned_to text NOT NULL REFERENCES hospitalflow.users(id),created_by text NOT NULL REFERENCES hospitalflow.users(id),
+ title text NOT NULL CHECK(length(title) BETWEEN 2 AND 150),location text NOT NULL CHECK(length(location) BETWEEN 1 AND 150),
+ due_at timestamptz NOT NULL,status text NOT NULL DEFAULT 'Assigned' CHECK(status IN ('Assigned','In progress','Completed')),
+ created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX work_tasks_assignee ON hospitalflow.work_tasks(assigned_to,due_at);
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.work_tasks FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+REVOKE ALL ON hospitalflow.email_changes,hospitalflow.work_tasks FROM PUBLIC;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.013_role_workspaces.sql','9AFD8640C0C031930236C14FE53C5A9F19400FAFFEE7A2C84626F5F54BA1E911');
+
+-- 014_mobile_validation.sql
+-- Existing Indian E.164 values retain their exact subscriber number.
+ALTER TABLE hospitalflow.person_profiles DROP CONSTRAINT person_profiles_mobile_check;
+UPDATE hospitalflow.patients SET phone=substring(phone FROM 4) WHERE phone~'^\+91[0-9]{10}$';
+UPDATE hospitalflow.person_profiles SET mobile=substring(mobile FROM 4) WHERE mobile~'^\+91[0-9]{10}$';
+UPDATE hospitalflow.patient_contacts SET phone=substring(phone FROM 4) WHERE phone~'^\+91[0-9]{10}$';
+UPDATE hospitalflow.suppliers SET contact_phone=substring(contact_phone FROM 4) WHERE contact_phone~'^\+91[0-9]{10}$';
+ALTER TABLE hospitalflow.patients ADD CONSTRAINT patient_mobile_ten_digits CHECK(phone~'^[0-9]{10}$');
+ALTER TABLE hospitalflow.person_profiles ADD CONSTRAINT profile_mobile_ten_digits CHECK(mobile IS NULL OR mobile~'^[0-9]{10}$');
+ALTER TABLE hospitalflow.patient_contacts ADD CONSTRAINT contact_mobile_ten_digits CHECK(phone~'^[0-9]{10}$');
+ALTER TABLE hospitalflow.suppliers ADD CONSTRAINT supplier_mobile_ten_digits CHECK(contact_phone IS NULL OR contact_phone~'^[0-9]{10}$');
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.014_mobile_validation.sql','B24A68B98DEC0C76AF57D007745C9D479130183E271DDCEADCE09D12D382B839');
+
+-- 015_hospital_network.sql
+CREATE TABLE hospitalflow.hospitals(id text PRIMARY KEY,name text NOT NULL CHECK(length(name) BETWEEN 2 AND 150),address text NOT NULL,city text NOT NULL,state text NOT NULL,postal_code text NOT NULL,active boolean NOT NULL DEFAULT true,accepting_referrals boolean NOT NULL DEFAULT true,is_demo boolean NOT NULL DEFAULT false,created_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO hospitalflow.hospitals(id,name,address,city,state,postal_code) SELECT 'H-0001',name,'Address not configured','Not configured','Not configured','Not configured' FROM hospitalflow.hospital_profile;
+CREATE FUNCTION hf_security.current_hospital() RETURNS text LANGUAGE sql STABLE AS $$ SELECT COALESCE(NULLIF(current_setting('hospitalflow.hospital_id',true),''),'H-0001') $$;
+CREATE TABLE hospitalflow.hospital_memberships(user_id text NOT NULL REFERENCES hospitalflow.users(id),hospital_id text NOT NULL REFERENCES hospitalflow.hospitals(id),active boolean NOT NULL DEFAULT true,created_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(user_id,hospital_id));
+CREATE TABLE hospitalflow.network_operators(user_id text PRIMARY KEY REFERENCES hospitalflow.users(id));
+INSERT INTO hospitalflow.hospital_memberships SELECT id,'H-0001',true,now() FROM hospitalflow.users;
+INSERT INTO hospitalflow.network_operators SELECT id FROM hospitalflow.users WHERE active AND role IN ('Admin','Developer') ORDER BY created_at,id LIMIT 1;
+ALTER TABLE hospitalflow.user_preferences ADD COLUMN hospital_id text REFERENCES hospitalflow.hospitals(id);
+CREATE TABLE hospitalflow.patient_hospitals(patient_id text NOT NULL REFERENCES hospitalflow.patients(id),hospital_id text NOT NULL REFERENCES hospitalflow.hospitals(id),registered_at timestamptz NOT NULL DEFAULT now(),PRIMARY KEY(patient_id,hospital_id));
+INSERT INTO hospitalflow.patient_hospitals SELECT id,'H-0001',created FROM hospitalflow.patients;
+CREATE FUNCTION hf_security.auto_hospital_member() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$ BEGIN
+ IF TG_TABLE_NAME='users' THEN
+ INSERT INTO hospitalflow.hospital_memberships(user_id,hospital_id) VALUES(NEW.id,hf_security.current_hospital());
+ IF NEW.role IN ('Admin','Developer') AND NOT EXISTS(SELECT 1 FROM hospitalflow.network_operators) THEN INSERT INTO hospitalflow.network_operators VALUES(NEW.id);END IF;
+ ELSE INSERT INTO hospitalflow.patient_hospitals(patient_id,hospital_id) VALUES(NEW.id,NEW.hospital_id);END IF;RETURN NEW;END $$;
+CREATE TRIGGER auto_hospital AFTER INSERT ON hospitalflow.users FOR EACH ROW EXECUTE FUNCTION hf_security.auto_hospital_member();
+CREATE FUNCTION hf_security.own_patient(p_patient text) RETURNS boolean LANGUAGE sql STABLE AS $$ SELECT p_patient IS NOT NULL AND p_patient=NULLIF(current_setting('hospitalflow.patient_id',true),'') $$;
+CREATE FUNCTION hf_security.enrolled_patient(p_patient text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$ SELECT EXISTS(SELECT 1 FROM hospitalflow.patient_hospitals WHERE patient_id=p_patient AND hospital_id=hf_security.current_hospital()) $$;
+CREATE FUNCTION hf_security.own_related(p_kind text,p_id text) RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$ BEGIN
+ IF nullif(current_setting('hospitalflow.patient_id',true),'') IS NULL THEN RETURN false;END IF;
+ IF p_kind='bill' THEN RETURN EXISTS(SELECT 1 FROM hospitalflow.bills WHERE id=p_id AND hf_security.own_patient(patient_id));
+ ELSIF p_kind='payment' THEN RETURN EXISTS(SELECT 1 FROM hospitalflow.payments p JOIN hospitalflow.bills b ON b.id=p.bill_id WHERE p.id=p_id AND hf_security.own_patient(b.patient_id));
+ ELSIF p_kind='doctor' THEN RETURN EXISTS(SELECT 1 FROM hospitalflow.appointments WHERE doctor_id=p_id AND hf_security.own_patient(patient_id));
+ ELSIF p_kind='medicine' THEN RETURN EXISTS(SELECT 1 FROM hospitalflow.prescriptions WHERE medicine_id=p_id AND hf_security.own_patient(patient_id));END IF;RETURN false;END $$;
+-- Every operational row has a hospital fence. Global authentication and shared taxonomy stay separate.
+DO $$ DECLARE t text;scope text;already boolean;BEGIN
+ FOREACH t IN ARRAY ARRAY['patients','doctors','appointments','beds','admissions','bed_assignments','medicine_batches','prescriptions','stock_movements','bills','bill_lines','payments','notes','staff_members','user_departments','patient_access_grants','patient_contacts','patient_consents','provider_absences','provider_sessions','encounters','service_catalog','service_prices','invoice_line_context','payment_reversals','clinical_orders','discharge_tasks','follow_ups','suppliers','purchase_orders','purchase_order_lines','goods_receipts','goods_receipt_lines','medicine_batch_holds','stock_reservations','prescription_dispensations','notification_acknowledgements','prescription_authors','admission_events','notifications','activity_log','row_history','idempotency_keys','work_tasks','integration_outbox','outbox_delivery'] LOOP
+ EXECUTE format('ALTER TABLE hospitalflow.%I ADD COLUMN hospital_id text NOT NULL DEFAULT hf_security.current_hospital() REFERENCES hospitalflow.hospitals(id)',t);
+ EXECUTE format('CREATE INDEX ON hospitalflow.%I(hospital_id)',t);
+ SELECT relrowsecurity INTO already FROM pg_class WHERE oid=('hospitalflow.'||t)::regclass;
+ scope:='hospital_id=hf_security.current_hospital()';
+ IF t='patients' THEN scope:='CASE WHEN nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NOT NULL THEN hf_security.own_patient(id) ELSE hospital_id=hf_security.current_hospital() OR hf_security.enrolled_patient(id) END';
+ ELSIF t IN ('appointments','admissions','prescriptions','bills') THEN scope:='CASE WHEN nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NOT NULL THEN hf_security.own_patient(patient_id) ELSE hospital_id=hf_security.current_hospital() END';
+ ELSIF t IN ('bill_lines','payments') THEN scope:='CASE WHEN nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NOT NULL THEN hf_security.own_related(''bill'',bill_id) ELSE hospital_id=hf_security.current_hospital() END';
+ ELSIF t='payment_reversals' THEN scope:='CASE WHEN nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NOT NULL THEN hf_security.own_related(''payment'',payment_id) ELSE hospital_id=hf_security.current_hospital() END';
+ ELSIF t='doctors' THEN scope:='CASE WHEN nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NOT NULL THEN hf_security.own_related(''doctor'',id) ELSE hospital_id=hf_security.current_hospital() END';
+ ELSIF t='medicine_batches' THEN scope:='CASE WHEN nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NOT NULL THEN hf_security.own_related(''medicine'',id) ELSE hospital_id=hf_security.current_hospital() END';
+ ELSIF t='activity_log' THEN scope:=scope||' AND (nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NULL OR actor_id=nullif(current_setting(''hospitalflow.actor_id'',true),''''))';
+ ELSE scope:=scope||' AND nullif(current_setting(''hospitalflow.patient_id'',true),'''') IS NULL';END IF;
+ EXECUTE format('ALTER TABLE hospitalflow.%I ENABLE ROW LEVEL SECURITY',t);
+ IF already THEN EXECUTE format('CREATE POLICY hospital_fence ON hospitalflow.%I AS RESTRICTIVE USING (%s) WITH CHECK(hospital_id=hf_security.current_hospital())',t,scope);
+ ELSE EXECUTE format('CREATE POLICY hospital_fence ON hospitalflow.%I USING (%s) WITH CHECK(%s)',t,scope,CASE WHEN t='patients' THEN scope ELSE 'hospital_id=hf_security.current_hospital()' END);END IF;
+ END LOOP;
+END $$;
+CREATE TRIGGER auto_hospital AFTER INSERT ON hospitalflow.patients FOR EACH ROW EXECUTE FUNCTION hf_security.auto_hospital_member();
+CREATE FUNCTION hf_security.guard_hospital_row() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+DECLARE doc jsonb;f record;parent_hospital text;ref text;BEGIN
+ doc:=CASE WHEN TG_OP='DELETE' THEN to_jsonb(OLD) ELSE to_jsonb(NEW) END;
+ IF TG_OP='UPDATE' AND NEW.hospital_id<>OLD.hospital_id THEN RAISE EXCEPTION 'Hospital ownership is immutable' USING ERRCODE='23514';END IF;
+ IF doc->>'hospital_id'<>hf_security.current_hospital() AND NOT(pg_has_role(session_user,'hospitalflow_job_runner','member') AND nullif(current_setting('hospitalflow.actor_id',true),'') IS NULL) AND NOT(TG_TABLE_NAME='patients' AND (hf_security.enrolled_patient(doc->>'id') OR hf_security.own_patient(doc->>'id'))) THEN RAISE EXCEPTION 'Record belongs to another hospital' USING ERRCODE='42501';END IF;
+ IF TG_OP<>'DELETE' THEN
+ ref:=COALESCE(doc->>'assigned_to',doc->>'user_id');
+ IF ref IS NOT NULL AND NOT EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships WHERE user_id=ref AND hospital_id=doc->>'hospital_id' AND active) AND NOT EXISTS(SELECT 1 FROM hospitalflow.network_operators WHERE user_id=ref) AND NOT EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=ref AND role='Developer') THEN RAISE EXCEPTION 'Person is not assigned to this hospital' USING ERRCODE='42501';END IF;
+ FOR f IN SELECT n.nspname,c.relname,a.attname target_col,src.attname source_col FROM pg_constraint fk JOIN pg_class c ON c.oid=fk.confrelid JOIN pg_namespace n ON n.oid=c.relnamespace JOIN pg_attribute a ON a.attrelid=c.oid AND a.attnum=fk.confkey[1] JOIN pg_attribute src ON src.attrelid=fk.conrelid AND src.attnum=fk.conkey[1] WHERE fk.contype='f' AND fk.conrelid=TG_RELID AND array_length(fk.conkey,1)=1 AND n.nspname='hospitalflow' AND EXISTS(SELECT 1 FROM pg_attribute WHERE attrelid=c.oid AND attname='hospital_id') LOOP
+ ref:=doc->>f.source_col;IF ref IS NULL THEN CONTINUE;END IF;
+ IF f.relname='patients' THEN IF NOT hf_security.enrolled_patient(ref) AND NOT hf_security.own_patient(ref) THEN RAISE EXCEPTION 'Patient is not registered at this hospital' USING ERRCODE='42501';END IF;
+ ELSE EXECUTE format('SELECT hospital_id FROM %I.%I WHERE %I::text=$1',f.nspname,f.relname,f.target_col) INTO parent_hospital USING ref;
+ IF parent_hospital IS NOT NULL AND parent_hospital<>doc->>'hospital_id' THEN RAISE EXCEPTION 'Cross-hospital reference is not allowed' USING ERRCODE='42501';END IF;END IF;
+ END LOOP;END IF;
+ IF TG_OP='DELETE' THEN RETURN OLD;END IF;RETURN NEW;END $$;
+DO $$ DECLARE t record;BEGIN FOR t IN SELECT table_name FROM information_schema.columns WHERE table_schema='hospitalflow' AND column_name='hospital_id' AND table_name NOT IN ('hospital_memberships','patient_hospitals','user_preferences') LOOP
+ EXECUTE format('CREATE TRIGGER z_hospital_guard BEFORE INSERT OR UPDATE OR DELETE ON hospitalflow.%I FOR EACH ROW EXECUTE FUNCTION hf_security.guard_hospital_row()',t.table_name);END LOOP;
+ FOR t IN SELECT schemaname,viewname FROM pg_views WHERE schemaname IN ('hospitalflow','hf_reporting','hf_api') LOOP EXECUTE format('ALTER VIEW %I.%I SET(security_invoker=true)',t.schemaname,t.viewname);END LOOP;
+END $$;
+-- Secure native mutations even where a SECURITY DEFINER helper bypasses SELECT RLS.
+DO $$ DECLARE d text;BEGIN SELECT pg_get_functiondef('hf_security.require_actor(text[])'::regprocedure) INTO d;
+ d:=replace(d,'IF NOT FOUND OR','IF NOT FOUND OR NOT EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships m WHERE m.user_id=u.id AND m.hospital_id=hf_security.current_hospital() AND m.active) AND u.role<>''Developer'' AND NOT EXISTS(SELECT 1 FROM hospitalflow.network_operators o WHERE o.user_id=u.id) OR');EXECUTE d;END $$;
+CREATE TABLE hospitalflow.referrals(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),patient_id text NOT NULL REFERENCES hospitalflow.patients(id),source_hospital_id text NOT NULL REFERENCES hospitalflow.hospitals(id),target_hospital_id text NOT NULL REFERENCES hospitalflow.hospitals(id),target_doctor_id text REFERENCES hospitalflow.doctors(id),referred_by text NOT NULL REFERENCES hospitalflow.users(id),reason text NOT NULL CHECK(length(trim(reason)) BETWEEN 5 AND 2000),status text NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending','Accepted','Declined','Cancelled')),created_at timestamptz NOT NULL DEFAULT now(),resolved_at timestamptz,resolved_by text REFERENCES hospitalflow.users(id),resolution_note text,CHECK(source_hospital_id<>target_hospital_id));
+CREATE UNIQUE INDEX referral_pending_unique ON hospitalflow.referrals(patient_id,source_hospital_id,target_hospital_id) WHERE status='Pending';
+CREATE INDEX referral_source ON hospitalflow.referrals(source_hospital_id,created_at);
+CREATE INDEX referral_target ON hospitalflow.referrals(target_hospital_id,created_at);
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.referrals FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.hospital_memberships FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.patient_hospitals FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.hospitals FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+ALTER TABLE hospitalflow.referrals ENABLE ROW LEVEL SECURITY;
+CREATE POLICY referral_scope ON hospitalflow.referrals USING(CASE WHEN nullif(current_setting('hospitalflow.patient_id',true),'') IS NOT NULL THEN hf_security.own_patient(patient_id) ELSE source_hospital_id=hf_security.current_hospital() OR target_hospital_id=hf_security.current_hospital() END) WITH CHECK(source_hospital_id=hf_security.current_hospital() OR target_hospital_id=hf_security.current_hospital());
+CREATE FUNCTION hf_security.directory_providers() RETURNS TABLE(id text,hospital_id text,registration_id text,name text,department text,shift_start time,shift_end time) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$ SELECT d.id,d.hospital_id,d.registration_id,d.name,d.department,d.start,d."end" FROM hospitalflow.doctors d WHERE d.active $$;
+-- These twenty fictional directory entries are explicitly labelled demonstration data.
+INSERT INTO hospitalflow.departments(name) VALUES('General Medicine'),('Cardiology'),('Orthopaedics'),('Paediatrics') ON CONFLICT DO NOTHING;
+DO $$ DECLARE i integer;cities text[]:=ARRAY['Bengaluru','Mumbai','New Delhi','Chennai','Hyderabad','Pune','Kolkata','Ahmedabad','Jaipur','Lucknow','Kochi','Chandigarh','Bhopal','Indore','Nagpur','Coimbatore','Patna','Bhubaneswar','Visakhapatnam','Mysuru'];states text[]:=ARRAY['Karnataka','Maharashtra','Delhi','Tamil Nadu','Telangana','Maharashtra','West Bengal','Gujarat','Rajasthan','Uttar Pradesh','Kerala','Chandigarh','Madhya Pradesh','Madhya Pradesh','Maharashtra','Tamil Nadu','Bihar','Odisha','Andhra Pradesh','Karnataka'];codes text[]:=ARRAY['560001','400001','110001','600001','500001','411001','700001','380001','302001','226001','682001','160001','462001','452001','440001','641001','800001','751001','530001','570001'];hid text;previous text:=hf_security.current_hospital();BEGIN
+ FOR i IN 1..20 LOOP hid:='H-'||lpad((i+1)::text,4,'0');
+ INSERT INTO hospitalflow.hospitals(id,name,address,city,state,postal_code,is_demo) VALUES(hid,'Demo '||cities[i]||' Care Hospital',i||' Example Health Avenue, Demonstration District',cities[i],states[i],codes[i],true);
+ PERFORM set_config('hospitalflow.hospital_id',hid,true);
+ INSERT INTO hospitalflow.doctors(id,name,department,start,"end",hospital_id) VALUES('NET-DR-'||i||'A','Demo Dr. Asha '||i,'General Medicine','09:00','17:00',hid),('NET-DR-'||i||'B','Demo Dr. Vikram '||i,CASE i%3 WHEN 0 THEN 'Paediatrics' WHEN 1 THEN 'Cardiology' ELSE 'Orthopaedics' END,'10:00','18:00',hid);
+ END LOOP;PERFORM set_config('hospitalflow.hospital_id',previous,true);END $$;
+REVOKE ALL ON hospitalflow.hospitals,hospitalflow.hospital_memberships,hospitalflow.network_operators,hospitalflow.patient_hospitals,hospitalflow.referrals FROM PUBLIC;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA hf_security FROM PUBLIC;
+CREATE FUNCTION hf_security.referral_patient_identity() RETURNS TABLE(id text,name text,registration_id text) LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+ SELECT p.id,p.name,p.registration_id FROM hospitalflow.patients p WHERE EXISTS(SELECT 1 FROM hospitalflow.referrals r WHERE r.patient_id=p.id AND (CASE WHEN nullif(current_setting('hospitalflow.patient_id',true),'') IS NOT NULL THEN hf_security.own_patient(r.patient_id) ELSE r.source_hospital_id=hf_security.current_hospital() OR r.target_hospital_id=hf_security.current_hospital() END)) $$;
+REVOKE EXECUTE ON FUNCTION hf_security.referral_patient_identity() FROM PUBLIC;
+-- Alert generation must attach each alert to the source hospital, including background refreshes.
+CREATE OR REPLACE PROCEDURE hf_ops.refresh_alerts() LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_ops,hf_security,pg_temp AS $$
+DECLARE h record;v_alerts jsonb;previous text:=hf_security.current_hospital();BEGIN PERFORM pg_advisory_xact_lock(74192301);
+ FOR h IN SELECT id FROM hospitalflow.hospitals LOOP
+ PERFORM set_config('hospitalflow.hospital_id',h.id,true);
+ SELECT COALESCE(jsonb_agg(to_jsonb(a)),'[]'::jsonb) INTO v_alerts FROM(
+ SELECT 'low-stock'::text rule,id reference,'Low stock needs attention'::text title,name||': '||quantity||' units remaining (reorder at '||reorder||').' message,'pharmacy'::text target FROM hospitalflow.medicine_batches WHERE hospital_id=h.id AND quantity<=reorder
+ UNION ALL SELECT 'expiry',id,'Medicine approaching expiry',name||' · '||batch||' · '||expiry,'pharmacy' FROM hospitalflow.medicine_batches WHERE hospital_id=h.id AND expiry<=hf_api.hospital_today()+30
+ UNION ALL SELECT 'cleaning',id,'Bed awaiting turnaround',id||' needs cleaning confirmation before reuse.','beds' FROM hospitalflow.beds WHERE hospital_id=h.id AND status='Cleaning'
+ UNION ALL SELECT 'queue',id,'Queue waiting time','A checked-in appointment has waited over 30 minutes.','appointments' FROM hospitalflow.appointments WHERE hospital_id=h.id AND status='Checked in' AND checked_in<now()-interval '30 minutes')a;
+ UPDATE hospitalflow.notifications n SET resolved_at=now() WHERE hospital_id=h.id AND resolved_at IS NULL AND NOT EXISTS(SELECT 1 FROM jsonb_to_recordset(v_alerts) a(rule text,reference text) WHERE a.rule=n.rule AND a.reference=n.reference);
+ INSERT INTO hospitalflow.notifications(id,rule,reference,title,message,target) SELECT gen_random_uuid()::text,rule,reference,title,message,target FROM jsonb_to_recordset(v_alerts) a(rule text,reference text,title text,message text,target text) ON CONFLICT(rule,reference) WHERE resolved_at IS NULL DO UPDATE SET message=EXCLUDED.message,title=EXCLUDED.title;
+ END LOOP;PERFORM set_config('hospitalflow.hospital_id',previous,true);END $$;
+ALTER TABLE hospitalflow.medicine_batches DROP CONSTRAINT medicine_batches_name_batch_key,ADD UNIQUE(hospital_id,name,batch);
+ALTER TABLE hospitalflow.suppliers DROP CONSTRAINT suppliers_code_key,ADD UNIQUE(hospital_id,code);
+ALTER TABLE hospitalflow.service_catalog DROP CONSTRAINT service_catalog_code_key,ADD UNIQUE(hospital_id,code);
+ALTER TABLE hospitalflow.staff_members DROP CONSTRAINT staff_members_employee_number_key,ADD UNIQUE(hospital_id,employee_number);
+ALTER TABLE hospitalflow.prescriptions ADD COLUMN created_at timestamptz;
+UPDATE hospitalflow.prescriptions p SET created_at=a.created_at FROM hospitalflow.prescription_authors a WHERE a.prescription_id=p.id;
+ALTER TABLE hospitalflow.prescriptions ALTER COLUMN created_at SET DEFAULT now();
+CREATE OR REPLACE FUNCTION hf_security.can_access_patient(p_patient text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+ SELECT EXISTS(SELECT 1 FROM hospitalflow.users u WHERE u.id=nullif(current_setting('hospitalflow.actor_id',true),'') AND u.active AND
+ (EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships m WHERE m.user_id=u.id AND m.hospital_id=hf_security.current_hospital() AND m.active) OR u.role='Developer' OR EXISTS(SELECT 1 FROM hospitalflow.network_operators o WHERE o.user_id=u.id)) AND
+ (u.role IN ('Admin','Developer') OR EXISTS(SELECT 1 FROM hospitalflow.patient_access_grants g WHERE g.user_id=u.id AND g.hospital_id=hf_security.current_hospital() AND g.patient_id=p_patient AND g.expires_at>now()) OR
+ EXISTS(SELECT 1 FROM hospitalflow.admissions a JOIN hospitalflow.beds b ON b.id=a.bed_id JOIN hospitalflow.wards w ON w.name=b.ward JOIN hospitalflow.user_departments d ON d.department=w.department AND d.hospital_id=hf_security.current_hospital() WHERE a.patient_id=p_patient AND a.hospital_id=hf_security.current_hospital() AND a.status='Admitted' AND d.user_id=u.id))) $$;
+REVOKE EXECUTE ON FUNCTION hf_security.can_access_patient(text) FROM PUBLIC;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.015_hospital_network.sql','806FD0ABE1E5D2511F6C753E1580BCE217B9B1ED4EF4B880E77907FA8371C495');
+
+-- 016_booking_and_attendance.sql
+-- Booking fees are unset until a hospital administrator configures them.
+CREATE TABLE hospitalflow.booking_settings(hospital_id text PRIMARY KEY REFERENCES hospitalflow.hospitals(id),fee numeric(12,2) NOT NULL CHECK(fee>=200 AND fee<=750),updated_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO hospitalflow.booking_settings(hospital_id,fee) SELECT id,200 FROM hospitalflow.hospitals;
+CREATE TABLE hospitalflow.appointment_bookings(
+ id uuid PRIMARY KEY, hospital_id text NOT NULL DEFAULT hf_security.current_hospital() REFERENCES hospitalflow.hospitals(id),
+ patient_id text NOT NULL REFERENCES hospitalflow.patients(id),doctor_id text NOT NULL REFERENCES hospitalflow.doctors(id),
+ at timestamptz NOT NULL,visit_type text NOT NULL CHECK(visit_type IN ('Consultation','Follow-up','Review')),
+ amount numeric(12,2) NOT NULL CHECK(amount>0),method text NOT NULL CHECK(method IN ('UPI','Netbanking','Card','QR','Cash')),
+ state text NOT NULL DEFAULT 'Pending' CHECK(state IN ('Pending','Paid','Expired','Cancelled','Refund pending','Refunded')),
+ payment_mode text NOT NULL CHECK(payment_mode IN ('Test','Cash','Disabled')),
+ appointment_id text UNIQUE REFERENCES hospitalflow.appointments(id),created_by text NOT NULL REFERENCES hospitalflow.users(id),
+ created_at timestamptz NOT NULL DEFAULT now(),expires_at timestamptz NOT NULL DEFAULT now()+interval '10 minutes',paid_at timestamptz,refunded_at timestamptz);
+CREATE INDEX booking_slot ON hospitalflow.appointment_bookings(hospital_id,doctor_id,at) WHERE state='Pending';
+CREATE TABLE hospitalflow.booking_events(id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,booking_id uuid NOT NULL REFERENCES hospitalflow.appointment_bookings(id),event text NOT NULL,actor_id text NOT NULL REFERENCES hospitalflow.users(id),at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE hospitalflow.staff_attendance(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hospital_id text NOT NULL DEFAULT hf_security.current_hospital() REFERENCES hospitalflow.hospitals(id),user_id text NOT NULL REFERENCES hospitalflow.users(id),day date NOT NULL,status text NOT NULL CHECK(status IN ('Present','Absent')),check_in timestamptz,check_out timestamptz,marked_by text NOT NULL REFERENCES hospitalflow.users(id),UNIQUE(hospital_id,user_id,day),CHECK(check_out IS NULL OR check_out>=check_in));
+CREATE TABLE hospitalflow.staff_leaves(id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hospital_id text NOT NULL DEFAULT hf_security.current_hospital() REFERENCES hospitalflow.hospitals(id),user_id text NOT NULL REFERENCES hospitalflow.users(id),starts_on date NOT NULL,ends_on date NOT NULL,reason text NOT NULL CHECK(length(reason) BETWEEN 5 AND 500),status text NOT NULL DEFAULT 'Pending' CHECK(status IN ('Pending','Approved','Rejected','Cancelled')),created_at timestamptz NOT NULL DEFAULT now(),resolved_by text REFERENCES hospitalflow.users(id),CHECK(ends_on>=starts_on AND ends_on-starts_on<=90));
+DO $$ DECLARE t text;BEGIN FOREACH t IN ARRAY ARRAY['booking_settings','appointment_bookings','staff_attendance','staff_leaves'] LOOP
+ EXECUTE format('ALTER TABLE hospitalflow.%I ENABLE ROW LEVEL SECURITY',t);
+ EXECUTE format('CREATE POLICY hospital_fence ON hospitalflow.%I USING(hospital_id=hf_security.current_hospital()) WITH CHECK(hospital_id=hf_security.current_hospital())',t);
+ EXECUTE format('CREATE TRIGGER z_hospital_guard BEFORE INSERT OR UPDATE OR DELETE ON hospitalflow.%I FOR EACH ROW EXECUTE FUNCTION hf_security.guard_hospital_row()',t);
+ IF t<>'booking_settings' THEN EXECUTE format('CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.%I FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history()',t);END IF;
+ END LOOP;END $$;
+-- No direct table writes for runtime: mutations go through the authorised command below.
+REVOKE ALL ON hospitalflow.booking_settings,hospitalflow.appointment_bookings,hospitalflow.booking_events,hospitalflow.staff_attendance,hospitalflow.staff_leaves FROM PUBLIC;
+CREATE FUNCTION hf_api.doctor_unavailable(p_doctor text,p_at timestamptz) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+ SELECT EXISTS(SELECT 1 FROM hospitalflow.provider_absences WHERE doctor_id=p_doctor AND hospital_id=hf_security.current_hospital() AND cancelled_at IS NULL AND starts_at<p_at+interval '10 minutes' AND ends_at>p_at)
+ OR EXISTS(SELECT 1 FROM (SELECT user_id,doctor_id FROM hospitalflow.person_profiles UNION SELECT user_id,doctor_id FROM hospitalflow.staff_members WHERE active AND hospital_id=hf_security.current_hospital()) p JOIN hospitalflow.staff_leaves l ON l.user_id=p.user_id WHERE p.doctor_id=p_doctor AND l.hospital_id=hf_security.current_hospital() AND l.status='Approved' AND (p_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN l.starts_on AND l.ends_on)
+ OR EXISTS(SELECT 1 FROM (SELECT user_id,doctor_id FROM hospitalflow.person_profiles UNION SELECT user_id,doctor_id FROM hospitalflow.staff_members WHERE active AND hospital_id=hf_security.current_hospital()) p JOIN hospitalflow.staff_attendance a ON a.user_id=p.user_id WHERE p.doctor_id=p_doctor AND a.hospital_id=hf_security.current_hospital() AND a.day=(p_at AT TIME ZONE 'Asia/Kolkata')::date AND a.status='Absent') $$;
+CREATE OR REPLACE FUNCTION hospitalflow.validate_appointment_overlap() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,pg_temp AS $$ BEGIN
+ PERFORM pg_advisory_xact_lock(74192301);
+ IF NEW.status NOT IN ('Cancelled','No show') AND EXISTS(SELECT 1 FROM hospitalflow.appointments a WHERE a.id<>NEW.id AND a.status NOT IN ('Cancelled','No show') AND (a.doctor_id=NEW.doctor_id OR a.patient_id=NEW.patient_id) AND a.at<NEW.at+interval '10 minutes' AND a.at+interval '10 minutes'>NEW.at) THEN RAISE EXCEPTION 'Appointment overlaps an existing visit' USING ERRCODE='23505';END IF;
+ IF (TG_OP='INSERT' OR NEW.at IS DISTINCT FROM OLD.at OR NEW.doctor_id IS DISTINCT FROM OLD.doctor_id) AND EXISTS(SELECT 1 FROM hospitalflow.appointment_bookings b WHERE b.hospital_id=NEW.hospital_id AND b.state='Pending' AND b.expires_at>now() AND b.id::text IS DISTINCT FROM nullif(current_setting('hospitalflow.booking_id',true),'') AND (b.doctor_id=NEW.doctor_id OR b.patient_id=NEW.patient_id) AND b.at<NEW.at+interval '10 minutes' AND b.at+interval '10 minutes'>NEW.at) THEN RAISE EXCEPTION 'This slot is held for payment' USING ERRCODE='23505';END IF;
+ RETURN NEW;END $$;
+CREATE OR REPLACE FUNCTION hospitalflow.validate_appointment_schedule() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE d hospitalflow.doctors%ROWTYPE;local_at timestamp;BEGIN
+ IF TG_OP='UPDATE' THEN
+ IF NEW.status IS DISTINCT FROM OLD.status AND NOT((OLD.status='Scheduled' AND NEW.status IN ('Checked in','Cancelled','No show')) OR(OLD.status='Checked in' AND NEW.status IN ('In consultation','Cancelled')) OR(OLD.status='In consultation' AND NEW.status='Completed')) THEN RAISE EXCEPTION 'Invalid appointment status transition' USING ERRCODE='23514';END IF;
+ IF OLD.status<>'Scheduled' AND(NEW.patient_id IS DISTINCT FROM OLD.patient_id OR NEW.doctor_id IS DISTINCT FROM OLD.doctor_id OR NEW.at IS DISTINCT FROM OLD.at) THEN RAISE EXCEPTION 'An active visit cannot be rescheduled' USING ERRCODE='23514';END IF;
+ -- Existing visits retain their history even when staff subsequently take leave.
+ IF NEW.at=OLD.at AND NEW.doctor_id=OLD.doctor_id AND NEW.patient_id=OLD.patient_id THEN RETURN NEW;END IF;
+ END IF;
+ IF NEW.status IN ('Cancelled','No show','Completed') THEN RETURN NEW;END IF;
+ SELECT * INTO STRICT d FROM hospitalflow.doctors WHERE id=NEW.doctor_id AND hospital_id=hf_security.current_hospital() AND active;
+ local_at:=NEW.at AT TIME ZONE 'Asia/Kolkata';
+ IF (hf_security.actor_id()<>'migration' AND NEW.at<now()+interval '2 hours') OR local_at::time<d.start OR local_at::time+interval '10 minutes'>d."end" OR extract(minute FROM local_at)::integer%10<>0 OR extract(second FROM local_at)<>0 OR hf_api.doctor_unavailable(d.id,NEW.at) OR(EXISTS(SELECT 1 FROM hospitalflow.provider_sessions ps WHERE ps.doctor_id=d.id AND (ps.starts_at AT TIME ZONE 'Asia/Kolkata')::date=local_at::date) AND NOT EXISTS(SELECT 1 FROM hospitalflow.provider_sessions ps WHERE ps.doctor_id=d.id AND ps.starts_at<=NEW.at AND ps.ends_at>=NEW.at+interval '10 minutes')) THEN RAISE EXCEPTION 'Choose an available 10-minute slot at least two hours ahead within the doctor shift' USING ERRCODE='23514';END IF;
+ RETURN NEW;END $$;
+CREATE OR REPLACE FUNCTION hospitalflow.validate_absence() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,pg_temp AS $$ BEGIN PERFORM pg_advisory_xact_lock(74192301);RETURN NEW;END $$;
+CREATE FUNCTION hf_api.booking_actor() RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$ DECLARE actor text:=hf_security.actor_id();BEGIN
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.users u WHERE u.id=actor AND u.active AND u.email_confirmed AND (EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships WHERE user_id=actor AND hospital_id=hf_security.current_hospital() AND active) OR EXISTS(SELECT 1 FROM hospitalflow.network_operators WHERE user_id=actor) OR u.role='Developer')) THEN RAISE EXCEPTION 'Active hospital identity required' USING ERRCODE='42501';END IF;RETURN actor;END $$;
+REVOKE ALL ON FUNCTION hf_api.booking_actor() FROM PUBLIC;
+-- Availability exposes only free times, never other patients' identities.
+CREATE FUNCTION hf_api.booking_slots(p_doctor text,p_day date,p_exclude text DEFAULT '') RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE result jsonb;BEGIN
+ PERFORM hf_api.booking_actor();
+ IF p_day<(now() AT TIME ZONE 'Asia/Kolkata')::date OR p_day>(now() AT TIME ZONE 'Asia/Kolkata')::date+90 THEN RAISE EXCEPTION 'Choose a date within the next 90 days' USING ERRCODE='23514';END IF;
+ SELECT COALESCE(jsonb_agg(s.at ORDER BY s.at),'[]') INTO result FROM hospitalflow.doctors d CROSS JOIN LATERAL generate_series((p_day+d.start) AT TIME ZONE 'Asia/Kolkata',((p_day+d."end") AT TIME ZONE 'Asia/Kolkata')-interval '10 minutes',interval '10 minutes') s(at)
+ WHERE d.id=p_doctor AND d.hospital_id=hf_security.current_hospital() AND d.active AND extract(minute FROM s.at AT TIME ZONE 'Asia/Kolkata')::int%10=0 AND s.at>=now()+interval '2 hours' AND NOT hf_api.doctor_unavailable(d.id,s.at)
+ AND NOT EXISTS(SELECT 1 FROM hospitalflow.appointments a WHERE a.hospital_id=d.hospital_id AND a.id<>p_exclude AND a.doctor_id=d.id AND a.status NOT IN ('Cancelled','No show') AND a.at<s.at+interval '10 minutes' AND a.at+interval '10 minutes'>s.at)
+ AND NOT EXISTS(SELECT 1 FROM hospitalflow.appointment_bookings b WHERE b.hospital_id=d.hospital_id AND b.doctor_id=d.id AND b.state='Pending' AND b.expires_at>now() AND b.at=s.at)
+ AND(NOT EXISTS(SELECT 1 FROM hospitalflow.provider_sessions ps WHERE ps.doctor_id=d.id AND (ps.starts_at AT TIME ZONE 'Asia/Kolkata')::date=p_day) OR EXISTS(SELECT 1 FROM hospitalflow.provider_sessions ps WHERE ps.doctor_id=d.id AND ps.starts_at<=s.at AND ps.ends_at>=s.at+interval '10 minutes'));
+ RETURN result;END $$;
+CREATE FUNCTION hf_api.booking_state() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE actor text;pid text;staff boolean;admin boolean;BEGIN
+ actor:=hf_api.booking_actor();
+ SELECT patient_id INTO pid FROM hospitalflow.patient_accounts WHERE user_id=actor;
+ staff:=pid IS NULL;SELECT role IN ('Admin','Developer') INTO admin FROM hospitalflow.users WHERE id=actor;
+ RETURN jsonb_build_object('fee',COALESCE((SELECT fee FROM hospitalflow.booking_settings WHERE hospital_id=hf_security.current_hospital()),200),'serverTime',now(),
+ 'doctors',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',id,'name',name,'department',department,'start',start::text,'end',"end"::text,'registrationId',registration_id) ORDER BY name),'[]') FROM hospitalflow.doctors WHERE hospital_id=hf_security.current_hospital() AND active),
+ 'bookings',(SELECT COALESCE(jsonb_agg(to_jsonb(b) || jsonb_build_object('state',CASE WHEN state='Pending' AND expires_at<=now() THEN 'Expired' ELSE state END)),'[]') FROM hospitalflow.appointment_bookings b WHERE hospital_id=hf_security.current_hospital() AND (patient_id=pid OR (staff AND (admin OR EXISTS(SELECT 1 FROM hospitalflow.user_permissions WHERE user_id=actor AND permission IN ('Doctor','Reception','Billing','Nurse')) OR EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=actor AND role IN ('Doctor','Nurse')))))),
+ 'unavailable',(SELECT COALESCE(jsonb_agg(id),'[]') FROM hospitalflow.appointments WHERE hospital_id=hf_security.current_hospital() AND (patient_id=pid OR(staff AND (admin OR EXISTS(SELECT 1 FROM hospitalflow.user_permissions WHERE user_id=actor AND permission IN ('Doctor','Reception','Nurse'))))) AND status='Scheduled' AND hf_api.doctor_unavailable(doctor_id,at)),
+ 'attendance',(SELECT COALESCE(jsonb_agg(to_jsonb(a) || jsonb_build_object('name',u.name,'registrationId',u.registration_id) ORDER BY a.day DESC),'[]') FROM hospitalflow.staff_attendance a JOIN hospitalflow.users u ON u.id=a.user_id WHERE staff AND a.hospital_id=hf_security.current_hospital() AND (admin OR a.user_id=actor)),
+ 'leaves',(SELECT COALESCE(jsonb_agg(to_jsonb(l) || jsonb_build_object('name',u.name,'registrationId',u.registration_id) ORDER BY l.created_at DESC),'[]') FROM hospitalflow.staff_leaves l JOIN hospitalflow.users u ON u.id=l.user_id WHERE staff AND l.hospital_id=hf_security.current_hospital() AND (admin OR l.user_id=actor)),
+ 'staff',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',u.id,'name',u.name,'registrationId',u.registration_id)),'[]') FROM hospitalflow.users u WHERE staff AND admin AND u.active AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=u.id) AND EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships WHERE user_id=u.id AND hospital_id=hf_security.current_hospital() AND active)));
+END $$;
+CREATE FUNCTION hf_api.booking_command(p_action text,p jsonb,p_test boolean) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE actor text;pid text;admin boolean;staff boolean;allowed boolean;b hospitalflow.appointment_bookings%ROWTYPE;a hospitalflow.appointments%ROWTYPE;v_booking_id uuid;at_time timestamptz;doc text;method text;fee numeric;aid text;target text;v_day date;leave_row hospitalflow.staff_leaves%ROWTYPE;BEGIN
+ actor:=hf_api.booking_actor();
+ SELECT patient_id INTO pid FROM hospitalflow.patient_accounts WHERE user_id=actor;
+ SELECT role IN ('Admin','Developer') INTO admin FROM hospitalflow.users WHERE users.id=actor;
+ staff:=pid IS NULL;
+ allowed:=admin OR EXISTS(SELECT 1 FROM hospitalflow.user_permissions WHERE user_id=actor AND permission IN ('Doctor','Reception')) OR EXISTS(SELECT 1 FROM hospitalflow.users WHERE users.id=actor AND role='Doctor');
+ PERFORM pg_advisory_xact_lock(74192301);
+ IF p_action='fee' THEN
+ IF NOT admin OR NOT staff THEN RAISE EXCEPTION 'Administration required' USING ERRCODE='42501';END IF;
+ INSERT INTO hospitalflow.booking_settings(hospital_id,fee) VALUES(hf_security.current_hospital(),(p->>'fee')::numeric) ON CONFLICT(hospital_id) DO UPDATE SET fee=EXCLUDED.fee,updated_at=now();
+ ELSIF p_action='reserve' THEN
+ IF pid IS NULL AND NOT allowed THEN RAISE EXCEPTION 'Booking is restricted to patients and booking staff' USING ERRCODE='42501';END IF;
+ IF pid IS NULL THEN pid:=p->>'patientId';END IF;
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.patient_hospitals WHERE patient_id=pid AND hospital_id=hf_security.current_hospital()) THEN RAISE EXCEPTION 'Patient is not registered here' USING ERRCODE='42501';END IF;
+ v_booking_id:=(p->>'id')::uuid;doc:=p->>'doctorId';at_time:=(p->>'at')::timestamptz;method:=p->>'method';
+ SELECT * INTO b FROM hospitalflow.appointment_bookings WHERE appointment_bookings.id=v_booking_id;
+ IF FOUND THEN
+ IF b.created_by<>actor OR b.hospital_id<>hf_security.current_hospital() OR b.patient_id<>pid OR b.doctor_id<>doc OR b.at<>at_time OR b.method<>method OR b.visit_type<>p->>'type' THEN RAISE EXCEPTION 'Retry details differ' USING ERRCODE='23514';END IF;
+ RETURN jsonb_build_object('reference',v_booking_id,'state',b.state);END IF;
+ IF staff AND method NOT IN ('Cash','QR') OR NOT staff AND method NOT IN ('UPI','Netbanking','Card','QR') THEN RAISE EXCEPTION 'Choose an allowed payment method' USING ERRCODE='23514';END IF;
+ SELECT booking_settings.fee INTO fee FROM hospitalflow.booking_settings WHERE hospital_id=hf_security.current_hospital();
+ fee:=COALESCE(fee,200);
+ IF method<>'Cash' AND NOT p_test THEN RAISE EXCEPTION 'Online payment provider is not configured; no money has been collected' USING ERRCODE='23514';END IF;
+ IF NOT hf_api.booking_slots(doc,(at_time AT TIME ZONE 'Asia/Kolkata')::date) @> jsonb_build_array(to_jsonb(at_time)) THEN RAISE EXCEPTION 'Slot is no longer available; choose another time' USING ERRCODE='23514';END IF;
+ IF EXISTS(SELECT 1 FROM hospitalflow.appointments WHERE hospital_id=hf_security.current_hospital() AND patient_id=pid AND status NOT IN ('Cancelled','No show') AND at<at_time+interval '10 minutes' AND at+interval '10 minutes'>at_time) OR EXISTS(SELECT 1 FROM hospitalflow.appointment_bookings WHERE hospital_id=hf_security.current_hospital() AND patient_id=pid AND state='Pending' AND expires_at>now() AND at=at_time) THEN RAISE EXCEPTION 'Patient already has a booking at this time' USING ERRCODE='23514';END IF;
+ INSERT INTO hospitalflow.appointment_bookings(id,patient_id,doctor_id,at,visit_type,amount,method,payment_mode,created_by,expires_at) VALUES(v_booking_id,pid,doc,at_time,p->>'type',fee,method,CASE WHEN method='Cash' THEN 'Cash' ELSE 'Test' END,actor,least(now()+interval '10 minutes',at_time-interval '2 hours'));
+ INSERT INTO hospitalflow.booking_events(booking_id,event,actor_id) VALUES(v_booking_id,'Slot held; payment pending',actor);
+ ELSIF p_action='pay' THEN
+ v_booking_id:=(p->>'id')::uuid;SELECT * INTO b FROM hospitalflow.appointment_bookings WHERE appointment_bookings.id=v_booking_id AND hospital_id=hf_security.current_hospital() AND (patient_id=pid OR(staff AND allowed)) FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Booking unavailable' USING ERRCODE='42501';END IF;
+ IF b.state='Paid' THEN RETURN jsonb_build_object('reference',b.appointment_id,'state','Paid');END IF;
+ IF b.state<>'Pending' OR b.expires_at<=now() THEN RAISE EXCEPTION 'Payment hold expired; choose a new slot' USING ERRCODE='23514';END IF;
+ IF b.payment_mode='Test' AND NOT p_test OR b.payment_mode='Cash' AND NOT(staff AND allowed) THEN RAISE EXCEPTION 'Payment confirmation is unavailable' USING ERRCODE='42501';END IF;
+ IF COALESCE((p->>'confirmed')::boolean,false)=false THEN RAISE EXCEPTION 'Confirm payment before booking' USING ERRCODE='23514';END IF;
+ PERFORM set_config('hospitalflow.booking_id',v_booking_id::text,true);aid:=hf_api.new_id('APT');
+ INSERT INTO hospitalflow.appointments(id,patient_id,doctor_id,at,type,status) VALUES(aid,b.patient_id,b.doctor_id,b.at,b.visit_type,'Scheduled');
+ UPDATE hospitalflow.appointment_bookings SET state='Paid',paid_at=now(),appointment_id=aid WHERE appointment_bookings.id=v_booking_id;
+ INSERT INTO hospitalflow.booking_events(booking_id,event,actor_id) VALUES(v_booking_id,CASE WHEN b.payment_mode='Test' THEN 'Test payment confirmed (no real charge)' ELSE 'Cash receipt confirmed by staff' END,actor);
+ ELSIF p_action IN ('cancel','reschedule') THEN
+ aid:=p->>'appointmentId';SELECT * INTO a FROM hospitalflow.appointments WHERE appointments.id=aid AND hospital_id=hf_security.current_hospital() AND (patient_id=pid OR(staff AND allowed)) FOR UPDATE;
+ IF NOT FOUND THEN RAISE EXCEPTION 'Appointment unavailable' USING ERRCODE='42501';END IF;
+ IF p_action='cancel' AND a.status='Cancelled' THEN RETURN jsonb_build_object('reference',aid);END IF;
+ IF a.status<>'Scheduled' OR a.at<=now() THEN RAISE EXCEPTION 'Only a future scheduled appointment can be changed' USING ERRCODE='23514';END IF;
+ SELECT * INTO b FROM hospitalflow.appointment_bookings WHERE appointment_id=aid FOR UPDATE;v_booking_id:=b.id;
+ IF p_action='reschedule' THEN
+ at_time:=(p->>'at')::timestamptz;doc:=p->>'doctorId';
+ IF NOT hf_api.booking_slots(doc,(at_time AT TIME ZONE 'Asia/Kolkata')::date,aid) @> jsonb_build_array(to_jsonb(at_time)) THEN RAISE EXCEPTION 'Slot is no longer available' USING ERRCODE='23514';END IF;
+ UPDATE hospitalflow.appointments SET at=at_time,doctor_id=doc WHERE appointments.id=aid;
+ UPDATE hospitalflow.appointment_bookings SET at=at_time,doctor_id=doc WHERE appointment_id=aid;
+ ELSE
+ UPDATE hospitalflow.appointments SET status='Cancelled' WHERE appointments.id=aid;
+ UPDATE hospitalflow.appointment_bookings SET state=CASE WHEN state='Paid' THEN CASE WHEN payment_mode='Test' THEN 'Refunded' ELSE 'Refund pending' END ELSE 'Cancelled' END,refunded_at=CASE WHEN state='Paid' AND payment_mode='Test' THEN now() ELSE NULL END WHERE appointment_id=aid AND state NOT IN ('Refunded','Refund pending');
+ END IF;
+ IF v_booking_id IS NOT NULL THEN INSERT INTO hospitalflow.booking_events(booking_id,event,actor_id) VALUES(v_booking_id,CASE WHEN p_action='reschedule' THEN 'Appointment rescheduled; original payment retained' WHEN b.payment_mode='Test' THEN 'Test refund to original test source; no real money moved' ELSE 'Refund requested to original source' END,actor);END IF;
+ ELSIF p_action IN ('attendance','checkout','leave','resolve-leave','cash-refund') THEN
+ IF NOT staff THEN RAISE EXCEPTION 'Patients cannot access attendance and leave' USING ERRCODE='42501';END IF;
+ target:=COALESCE(NULLIF(p->>'userId',''),actor);
+ IF target<>actor AND NOT admin THEN RAISE EXCEPTION 'Administration required' USING ERRCODE='42501';END IF;
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.users u WHERE u.id=target AND active AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=u.id) AND (EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships WHERE user_id=u.id AND hospital_id=hf_security.current_hospital() AND active) OR EXISTS(SELECT 1 FROM hospitalflow.network_operators WHERE user_id=u.id))) THEN RAISE EXCEPTION 'Staff member unavailable' USING ERRCODE='42501';END IF;
+ IF p_action='attendance' THEN
+ v_day:=COALESCE((p->>'day')::date,(now() AT TIME ZONE 'Asia/Kolkata')::date);
+ IF NOT admin AND (v_day<>(now() AT TIME ZONE 'Asia/Kolkata')::date OR p->>'status'<>'Present') THEN RAISE EXCEPTION 'Staff may check in only for today; administration marks absence' USING ERRCODE='42501';END IF;
+ IF v_day>(now() AT TIME ZONE 'Asia/Kolkata')::date THEN RAISE EXCEPTION 'Cannot mark future attendance' USING ERRCODE='23514';END IF;
+ INSERT INTO hospitalflow.staff_attendance(user_id,day,status,check_in,marked_by) VALUES(target,v_day,p->>'status',CASE WHEN p->>'status'='Present' THEN now() ELSE NULL END,actor) ON CONFLICT(hospital_id,user_id,day) DO UPDATE SET status=EXCLUDED.status,marked_by=actor,check_in=CASE WHEN EXCLUDED.status='Present' THEN COALESCE(staff_attendance.check_in,now()) ELSE NULL END,check_out=CASE WHEN EXCLUDED.status='Absent' THEN NULL ELSE staff_attendance.check_out END;
+ ELSIF p_action='checkout' THEN
+ UPDATE hospitalflow.staff_attendance SET check_out=COALESCE(check_out,now()) WHERE hospital_id=hf_security.current_hospital() AND user_id=actor AND staff_attendance.day=(now() AT TIME ZONE 'Asia/Kolkata')::date AND status='Present';IF NOT FOUND THEN RAISE EXCEPTION 'Check in first' USING ERRCODE='23514';END IF;
+ ELSIF p_action='leave' THEN
+ IF (p->>'startsOn')::date<(now() AT TIME ZONE 'Asia/Kolkata')::date OR EXISTS(SELECT 1 FROM hospitalflow.staff_leaves WHERE hospital_id=hf_security.current_hospital() AND user_id=target AND status IN ('Pending','Approved') AND starts_on<=(p->>'endsOn')::date AND ends_on>=(p->>'startsOn')::date) THEN RAISE EXCEPTION 'Choose future dates without overlapping leave' USING ERRCODE='23514';END IF;
+ INSERT INTO hospitalflow.staff_leaves(user_id,starts_on,ends_on,reason) VALUES(target,(p->>'startsOn')::date,(p->>'endsOn')::date,p->>'reason');
+ ELSIF p_action='resolve-leave' THEN
+ SELECT * INTO leave_row FROM hospitalflow.staff_leaves WHERE staff_leaves.id=(p->>'id')::uuid AND hospital_id=hf_security.current_hospital() FOR UPDATE;
+ IF NOT FOUND OR (NOT admin AND(leave_row.user_id<>actor OR p->>'status'<>'Cancelled')) OR p->>'status' NOT IN ('Approved','Rejected','Cancelled') OR leave_row.status NOT IN ('Pending','Approved') OR (leave_row.status='Approved' AND p->>'status'<>'Cancelled') THEN RAISE EXCEPTION 'Leave action is unavailable' USING ERRCODE='42501';END IF;
+ IF p->>'status'='Approved' AND leave_row.user_id=actor THEN RAISE EXCEPTION 'Another administrator must approve your leave' USING ERRCODE='23514';END IF;
+ UPDATE hospitalflow.staff_leaves SET status=p->>'status',resolved_by=actor WHERE staff_leaves.id=leave_row.id;
+ ELSE
+ IF NOT admin THEN RAISE EXCEPTION 'Administration required' USING ERRCODE='42501';END IF;
+ v_booking_id:=(p->>'id')::uuid;UPDATE hospitalflow.appointment_bookings SET state='Refunded',refunded_at=now() WHERE appointment_bookings.id=v_booking_id AND hospital_id=hf_security.current_hospital() AND payment_mode='Cash' AND state='Refund pending';IF NOT FOUND THEN RAISE EXCEPTION 'Cash refund is unavailable' USING ERRCODE='23514';END IF;
+ INSERT INTO hospitalflow.booking_events(booking_id,event,actor_id) VALUES(v_booking_id,'Cash refund returned and confirmed by administration',actor);
+ END IF;
+ ELSE RAISE EXCEPTION 'Unknown booking operation' USING ERRCODE='23514';END IF;
+ PERFORM hf_security.audit('booking-'||p_action,COALESCE(aid,v_booking_id::text,target,'settings'));
+ RETURN jsonb_build_object('reference',COALESCE(aid,v_booking_id::text),'state',CASE WHEN p_action='reserve' THEN 'Pending' WHEN p_action='pay' THEN 'Paid' ELSE 'Saved' END);
+END $$;
+REVOKE ALL ON FUNCTION hf_api.booking_state(),hf_api.booking_slots(text,date,text),hf_api.booking_command(text,jsonb,boolean),hf_api.doctor_unavailable(text,timestamptz) FROM PUBLIC;
+-- All cancellation paths, including the existing staff status command, preserve refund tracking.
+CREATE FUNCTION hospitalflow.booking_cancel_refund() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$ DECLARE b record;BEGIN
+ IF NEW.status='Cancelled' AND OLD.status<>'Cancelled' THEN
+ FOR b IN UPDATE hospitalflow.appointment_bookings SET state=CASE WHEN payment_mode='Test' THEN 'Refunded' ELSE 'Refund pending' END,refunded_at=CASE WHEN payment_mode='Test' THEN now() ELSE NULL END WHERE appointment_id=NEW.id AND state='Paid' RETURNING id,payment_mode LOOP
+ INSERT INTO hospitalflow.booking_events(booking_id,event,actor_id) VALUES(b.id,CASE WHEN b.payment_mode='Test' THEN 'Test refund to original test source (no real money moved)' ELSE 'Refund requested to original cash source' END,hf_security.actor_id());
+ END LOOP;END IF;RETURN NEW;END $$;
+CREATE TRIGGER booking_cancel_refund AFTER UPDATE ON hospitalflow.appointments FOR EACH ROW EXECUTE FUNCTION hospitalflow.booking_cancel_refund();
+REVOKE ALL ON FUNCTION hospitalflow.booking_cancel_refund() FROM PUBLIC;
+ALTER TABLE hospitalflow.booking_events ENABLE ROW LEVEL SECURITY;
+CREATE POLICY booking_event_fence ON hospitalflow.booking_events USING(EXISTS(SELECT 1 FROM hospitalflow.appointment_bookings b WHERE b.id=booking_id AND b.hospital_id=hf_security.current_hospital()));
+
+DROP POLICY hospital_fence ON hospitalflow.appointment_bookings;
+CREATE POLICY hospital_fence ON hospitalflow.appointment_bookings USING(CASE WHEN nullif(current_setting('hospitalflow.patient_id',true),'') IS NOT NULL THEN hf_security.own_patient(patient_id) ELSE hospital_id=hf_security.current_hospital() END) WITH CHECK(hospital_id=hf_security.current_hospital());
+CREATE TRIGGER immutable_ledger BEFORE UPDATE OR DELETE ON hospitalflow.booking_events FOR EACH ROW EXECUTE FUNCTION hospitalflow.prevent_ledger_changes();
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.016_booking_and_attendance.sql','23AA8F4062F7E5C3F206D2055E2E0B4115819A57B40443287180C1D513F1AEBF');
+
+-- 017_department_booking.sql
+-- Doctors book within their registered hospital department. Referrals remain a separate workflow.
+CREATE FUNCTION hf_api.can_book_provider(p_doctor text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+ SELECT EXISTS(SELECT 1 FROM hospitalflow.users u JOIN hospitalflow.doctors d ON d.id=p_doctor AND d.active AND d.hospital_id=hf_security.current_hospital()
+ LEFT JOIN hospitalflow.person_profiles p ON p.user_id=u.id LEFT JOIN hospitalflow.doctors own ON own.id=p.doctor_id
+ LEFT JOIN hospitalflow.staff_members s ON s.user_id=u.id AND s.active AND s.hospital_id=hf_security.current_hospital() LEFT JOIN hospitalflow.doctors sd ON sd.id=s.doctor_id
+ WHERE u.id=hf_security.actor_id() AND u.active AND (u.role IN ('Admin','Developer') OR
+ (u.role<>'Doctor' AND NOT EXISTS(SELECT 1 FROM hospitalflow.user_permissions WHERE user_id=u.id AND permission='Doctor')) OR
+ (d.department=COALESCE(own.department,p.department,sd.department,s.department) AND COALESCE(own.hospital_id,s.hospital_id,hf_security.current_hospital())=hf_security.current_hospital()))) $$;
+REVOKE ALL ON FUNCTION hf_api.can_book_provider(text) FROM PUBLIC;
+CREATE FUNCTION hospitalflow.guard_booking_department() RETURNS trigger LANGUAGE plpgsql SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$ BEGIN
+ IF TG_OP='INSERT' OR NEW.doctor_id IS DISTINCT FROM OLD.doctor_id OR NEW.at IS DISTINCT FROM OLD.at OR NEW.patient_id IS DISTINCT FROM OLD.patient_id THEN
+ IF hf_security.actor_id() IS NOT NULL AND hf_security.actor_id()<>'migration' AND NOT hf_api.can_book_provider(NEW.doctor_id) THEN RAISE EXCEPTION 'Doctors can book only within their own registered hospital department; use a referral for another department or hospital' USING ERRCODE='42501';END IF;
+ END IF;RETURN NEW;END $$;
+CREATE TRIGGER booking_department BEFORE INSERT OR UPDATE ON hospitalflow.appointments FOR EACH ROW EXECUTE FUNCTION hospitalflow.guard_booking_department();
+CREATE TRIGGER booking_department BEFORE INSERT OR UPDATE ON hospitalflow.appointment_bookings FOR EACH ROW EXECUTE FUNCTION hospitalflow.guard_booking_department();
+REVOKE ALL ON FUNCTION hospitalflow.guard_booking_department() FROM PUBLIC;
+-- Apply the same restriction to previews, reservations and rescheduling before payment is taken.
+DO $$ DECLARE definition text;BEGIN
+ SELECT pg_get_functiondef('hf_api.booking_slots(text,date,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,'AND d.active AND extract','AND d.active AND hf_api.can_book_provider(d.id) AND extract');EXECUTE definition;
+ SELECT pg_get_functiondef('hf_api.booking_state()'::regprocedure) INTO definition;
+ definition:=replace(definition,'AND active),','AND active AND hf_api.can_book_provider(id)),');EXECUTE definition;
+END $$;
+CREATE FUNCTION hf_api.select_booking_hospital(p_hospital text) RETURNS void LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE actor text;pid text;BEGIN
+ actor:=hf_api.booking_actor();SELECT patient_id INTO pid FROM hospitalflow.patient_accounts WHERE user_id=actor;
+ IF pid IS NULL THEN RAISE EXCEPTION 'Only patients may register themselves at a network hospital' USING ERRCODE='42501';END IF;
+ PERFORM pg_advisory_xact_lock(74192301);
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.hospitals WHERE id=p_hospital AND active) OR EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships WHERE user_id=actor AND hospital_id=p_hospital AND NOT active) THEN RAISE EXCEPTION 'Hospital access is unavailable; contact administration' USING ERRCODE='42501';END IF;
+ INSERT INTO hospitalflow.patient_hospitals(patient_id,hospital_id) VALUES(pid,p_hospital) ON CONFLICT DO NOTHING;
+ INSERT INTO hospitalflow.hospital_memberships(user_id,hospital_id) VALUES(actor,p_hospital) ON CONFLICT DO NOTHING;
+ PERFORM hf_security.audit('patient-booking-hospital-registration',p_hospital);
+END $$;
+REVOKE ALL ON FUNCTION hf_api.select_booking_hospital(text) FROM PUBLIC;
+-- A same-hospital referral must identify a receiving doctor.
+ALTER TABLE hospitalflow.referrals DROP CONSTRAINT referrals_check;
+ALTER TABLE hospitalflow.referrals ADD CONSTRAINT referral_destination CHECK(source_hospital_id<>target_hospital_id OR target_doctor_id IS NOT NULL);
+DROP INDEX hospitalflow.referral_pending_unique;
+CREATE UNIQUE INDEX referral_pending_unique ON hospitalflow.referrals(patient_id,source_hospital_id,target_hospital_id,COALESCE(target_doctor_id,'')) WHERE status='Pending';
+-- Patients also exclude their own overlapping visits/holds across the network.
+DO $$ DECLARE definition text;BEGIN
+ SELECT pg_get_functiondef('hf_api.booking_slots(text,date,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,'AND(NOT EXISTS(SELECT 1 FROM hospitalflow.provider_sessions',
+ 'AND NOT EXISTS(SELECT 1 FROM hospitalflow.appointments mine JOIN hospitalflow.patient_accounts pa ON pa.patient_id=mine.patient_id WHERE pa.user_id=hf_security.actor_id() AND mine.id<>p_exclude AND mine.status NOT IN (''Cancelled'',''No show'') AND mine.at<s.at+interval ''10 minutes'' AND mine.at+interval ''10 minutes''>s.at)
+ AND NOT EXISTS(SELECT 1 FROM hospitalflow.appointment_bookings mine JOIN hospitalflow.patient_accounts pa ON pa.patient_id=mine.patient_id WHERE pa.user_id=hf_security.actor_id() AND mine.state=''Pending'' AND mine.expires_at>now() AND mine.at<s.at+interval ''10 minutes'' AND mine.at+interval ''10 minutes''>s.at)
+ AND(NOT EXISTS(SELECT 1 FROM hospitalflow.provider_sessions');EXECUTE definition;
+END $$;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.017_department_booking.sql','5BC47192EAEC1CA0C323C7530C447F4350F2F7613C073398DC1DA83EE6EBA86C');
+
+-- 018_attendance_approval.sql
+ALTER TABLE hospitalflow.staff_attendance ADD COLUMN approval_status text NOT NULL DEFAULT 'Approved' CHECK(approval_status IN ('Pending','Approved','Rejected')),
+ ADD COLUMN reviewed_by text REFERENCES hospitalflow.users(id),ADD COLUMN reviewed_at timestamptz,ADD COLUMN review_note text NOT NULL DEFAULT '' CHECK(length(review_note)<=500),ADD COLUMN submitted_at timestamptz NOT NULL DEFAULT now();
+ALTER TABLE hospitalflow.staff_attendance ALTER COLUMN approval_status SET DEFAULT 'Pending';
+CREATE INDEX attendance_pending_review ON hospitalflow.staff_attendance(hospital_id,submitted_at) WHERE approval_status='Pending';
+CREATE FUNCTION hf_api.can_review_attendance() RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+ SELECT EXISTS(SELECT 1 FROM hospitalflow.users u JOIN hospitalflow.hospital_memberships m ON m.user_id=u.id AND m.hospital_id=hf_security.current_hospital() AND m.active WHERE u.id=hf_security.actor_id() AND u.active AND u.email_confirmed AND u.role IN ('Admin','Developer') AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=u.id)) $$;
+ALTER FUNCTION hf_api.booking_command(text,jsonb,boolean) RENAME TO booking_command_base;
+CREATE FUNCTION hf_api.booking_command(p_action text,p jsonb,p_test boolean) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE actor text;attendance hospitalflow.staff_attendance%ROWTYPE;outcome text;note text;BEGIN
+ IF p_action NOT IN ('attendance','checkout','review-attendance') THEN RETURN hf_api.booking_command_base(p_action,p,p_test);END IF;
+ actor:=hf_api.booking_actor();
+ IF EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=actor) THEN RAISE EXCEPTION 'Patients cannot access attendance' USING ERRCODE='42501';END IF;
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.hospital_memberships WHERE user_id=actor AND hospital_id=hf_security.current_hospital() AND active) THEN RAISE EXCEPTION 'Attendance requires an active membership at this hospital' USING ERRCODE='42501';END IF;
+ PERFORM pg_advisory_xact_lock(74192301);
+ IF p_action='review-attendance' THEN
+ IF NOT hf_api.can_review_attendance() THEN RAISE EXCEPTION 'Only an administrator assigned to this hospital can review attendance' USING ERRCODE='42501';END IF;
+ outcome:=p->>'status';note:=COALESCE(p->>'note','');
+ IF outcome IS NULL OR outcome NOT IN ('Approved','Rejected') OR length(note)>500 OR(outcome='Rejected' AND length(trim(note))<5) THEN RAISE EXCEPTION 'Choose an approval outcome; rejection requires a reason of at least five characters' USING ERRCODE='23514';END IF;
+ SELECT * INTO attendance FROM hospitalflow.staff_attendance WHERE id=(p->>'id')::uuid AND hospital_id=hf_security.current_hospital() FOR UPDATE;
+ IF NOT FOUND OR attendance.user_id=actor THEN RAISE EXCEPTION 'Attendance is unavailable or belongs to you; another hospital administrator must review it' USING ERRCODE='42501';END IF;
+ IF attendance.approval_status<>'Pending' THEN RAISE EXCEPTION 'This attendance request has already been reviewed' USING ERRCODE='23514';END IF;
+ UPDATE hospitalflow.staff_attendance SET approval_status=outcome,reviewed_by=actor,reviewed_at=now(),review_note=trim(note) WHERE id=attendance.id;
+ ELSE
+ IF COALESCE(NULLIF(p->>'userId',''),actor)<>actor THEN RAISE EXCEPTION 'Staff can submit only their own attendance' USING ERRCODE='42501';END IF;
+ IF p ? 'day' AND(p->>'day')::date<>(now() AT TIME ZONE 'Asia/Kolkata')::date THEN RAISE EXCEPTION 'You may submit attendance only for today' USING ERRCODE='23514';END IF;
+ SELECT * INTO attendance FROM hospitalflow.staff_attendance WHERE hospital_id=hf_security.current_hospital() AND user_id=actor AND day=(now() AT TIME ZONE 'Asia/Kolkata')::date FOR UPDATE;
+ IF p_action='checkout' THEN
+ IF attendance.id IS NULL OR attendance.status<>'Present' OR attendance.approval_status='Rejected' THEN RAISE EXCEPTION 'Submit a present check-in before checking out' USING ERRCODE='23514';END IF;
+ IF attendance.check_out IS NOT NULL THEN RETURN jsonb_build_object('reference',attendance.id,'state',attendance.approval_status);END IF;
+ UPDATE hospitalflow.staff_attendance SET check_out=now(),approval_status='Pending',reviewed_by=NULL,reviewed_at=NULL,review_note='',submitted_at=now() WHERE id=attendance.id;
+ ELSE
+ IF p->>'status' IS NULL OR p->>'status' NOT IN ('Present','Absent') THEN RAISE EXCEPTION 'Choose Present or Absent' USING ERRCODE='23514';END IF;
+ IF attendance.id IS NOT NULL AND attendance.approval_status<>'Rejected' THEN
+ IF attendance.status=p->>'status' THEN
+ IF attendance.approval_status='Approved' AND attendance.reviewed_by IS NULL THEN
+ UPDATE hospitalflow.staff_attendance SET approval_status='Pending',submitted_at=now() WHERE id=attendance.id;
+ PERFORM hf_security.audit('attendance-submitted-for-review',attendance.id::text);
+ RETURN jsonb_build_object('reference',attendance.id,'state','Pending');END IF;
+ RETURN jsonb_build_object('reference',attendance.id,'state',attendance.approval_status);END IF;
+ RAISE EXCEPTION 'Attendance was already submitted; contact your hospital administrator' USING ERRCODE='23514';END IF;
+ INSERT INTO hospitalflow.staff_attendance(user_id,day,status,check_in,marked_by) VALUES(actor,(now() AT TIME ZONE 'Asia/Kolkata')::date,p->>'status',CASE WHEN p->>'status'='Present' THEN now() ELSE NULL END,actor)
+ ON CONFLICT(hospital_id,user_id,day) DO UPDATE SET status=EXCLUDED.status,check_in=EXCLUDED.check_in,check_out=NULL,marked_by=actor,approval_status='Pending',reviewed_by=NULL,reviewed_at=NULL,review_note='',submitted_at=now() RETURNING * INTO attendance;
+ END IF;END IF;
+ PERFORM hf_security.audit(CASE WHEN p_action='review-attendance' THEN 'attendance-'||lower(outcome) ELSE 'attendance-'||p_action END,attendance.id::text);
+ RETURN jsonb_build_object('reference',attendance.id,'state',CASE WHEN p_action='review-attendance' THEN outcome ELSE 'Pending' END);
+END $$;
+-- Do not expose the older attendance implementation as an alternate API.
+REVOKE ALL ON FUNCTION hf_api.booking_command_base(text,jsonb,boolean) FROM PUBLIC;
+ALTER FUNCTION hf_api.booking_state() RENAME TO booking_state_base;
+CREATE FUNCTION hf_api.booking_state() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE result jsonb;actor text;reviewer boolean;BEGIN
+ result:=hf_api.booking_state_base();actor:=hf_api.booking_actor();reviewer:=hf_api.can_review_attendance();
+ RETURN result || jsonb_build_object('canReviewAttendance',reviewer,'attendance',(SELECT COALESCE(jsonb_agg(to_jsonb(a)||jsonb_build_object('name',u.name,'registrationId',u.registration_id,'reviewerName',r.name) ORDER BY a.day DESC,a.submitted_at DESC),'[]') FROM hospitalflow.staff_attendance a JOIN hospitalflow.users u ON u.id=a.user_id LEFT JOIN hospitalflow.users r ON r.id=a.reviewed_by WHERE a.hospital_id=hf_security.current_hospital() AND (reviewer OR a.user_id=actor) AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=actor)));
+END $$;
+DO $$ DECLARE definition text;BEGIN SELECT pg_get_functiondef('hf_api.doctor_unavailable(text,timestamptz)'::regprocedure) INTO definition;
+ definition:=replace(definition,'a.status=''Absent''','a.status=''Absent'' AND a.approval_status=''Approved''');EXECUTE definition;END $$;
+REVOKE ALL ON FUNCTION hf_api.booking_command(text,jsonb,boolean),hf_api.booking_state(),hf_api.booking_state_base(),hf_api.can_review_attendance() FROM PUBLIC;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.018_attendance_approval.sql','371DFAA12E20CF072B838EF43A740489FA524BBDD259CA666F60C341336ABBBC');
+
+-- 019_attendance_hours_and_admin_review.sql
+-- Administrators may review their own attendance, within their assigned hospital.
+DO $$ DECLARE definition text;BEGIN
+ SELECT pg_get_functiondef('hf_api.booking_command(text,jsonb,boolean)'::regprocedure) INTO definition;
+ definition:=replace(definition,'IF NOT FOUND OR attendance.user_id=actor THEN RAISE EXCEPTION ''Attendance is unavailable or belongs to you; another hospital administrator must review it''', 'IF NOT FOUND THEN RAISE EXCEPTION ''Attendance is unavailable in this hospital''');EXECUTE definition;
+END $$;
+-- Final duration is derived from the recorded timestamps, restricted to this IST calendar day.
+-- Unfinished check-ins have no final duration; their live elapsed duration is returned separately.
+ALTER TABLE hospitalflow.staff_attendance ADD COLUMN total_seconds bigint GENERATED ALWAYS AS (
+ CASE WHEN status='Absent' THEN 0 WHEN check_in IS NULL OR check_out IS NULL THEN NULL
+ ELSE greatest(0,extract(epoch FROM(least(check_out,(day+1)::timestamp AT TIME ZONE 'Asia/Kolkata')-greatest(check_in,day::timestamp AT TIME ZONE 'Asia/Kolkata')))::bigint) END) STORED;
+CREATE OR REPLACE FUNCTION hf_api.booking_state() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE result jsonb;actor text;reviewer boolean;BEGIN
+ result:=hf_api.booking_state_base();actor:=hf_api.booking_actor();reviewer:=hf_api.can_review_attendance();
+ RETURN result || jsonb_build_object('canReviewAttendance',reviewer,'attendance',(SELECT COALESCE(jsonb_agg(to_jsonb(a)||jsonb_build_object('name',u.name,'registrationId',u.registration_id,'reviewerName',r.name,
+ 'totalHours',round(a.total_seconds/3600.0,2),
+ 'elapsedSeconds',CASE WHEN a.status='Present' AND a.check_in IS NOT NULL AND a.check_out IS NULL THEN greatest(0,extract(epoch FROM(least(now(),(a.day+1)::timestamp AT TIME ZONE 'Asia/Kolkata')-greatest(a.check_in,a.day::timestamp AT TIME ZONE 'Asia/Kolkata')))::bigint) ELSE a.total_seconds END)
+ ORDER BY a.day DESC,a.submitted_at DESC),'[]') FROM hospitalflow.staff_attendance a JOIN hospitalflow.users u ON u.id=a.user_id LEFT JOIN hospitalflow.users r ON r.id=a.reviewed_by WHERE a.hospital_id=hf_security.current_hospital() AND (reviewer OR a.user_id=actor) AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=actor)));
+END $$;
+COMMENT ON COLUMN hospitalflow.staff_attendance.total_seconds IS 'Completed attendance duration in seconds within the recorded IST date; absent=0, no checkout=NULL. Approval remains separate from elapsed time.';
+CREATE FUNCTION hf_api.manage_staff_attendance(p jsonb) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE actor text;target text;attendance_day date;presence text;started timestamptz;finished timestamptz;reason text;record_id uuid;BEGIN
+ actor:=hf_api.booking_actor();IF NOT hf_api.can_review_attendance() THEN RAISE EXCEPTION 'Only an administrator assigned to this hospital can manage attendance' USING ERRCODE='42501';END IF;
+ target:=p->>'userId';attendance_day:=(p->>'day')::date;presence:=p->>'status';reason:=trim(COALESCE(p->>'reason',''));
+ IF attendance_day IS NULL OR attendance_day>(now() AT TIME ZONE 'Asia/Kolkata')::date OR attendance_day<date '1900-01-01' OR presence IS NULL OR presence NOT IN ('Present','Absent') OR length(reason) NOT BETWEEN 5 AND 500 THEN RAISE EXCEPTION 'Choose a valid attendance date, status and reason of 5–500 characters' USING ERRCODE='23514';END IF;
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.users u JOIN hospitalflow.hospital_memberships m ON m.user_id=u.id AND m.hospital_id=hf_security.current_hospital() AND m.active WHERE u.id=target AND u.active AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=u.id)) THEN RAISE EXCEPTION 'Choose an employee assigned to this hospital' USING ERRCODE='42501';END IF;
+ IF presence='Present' THEN
+ started:=NULLIF(p->>'checkIn','')::timestamptz;finished:=NULLIF(p->>'checkOut','')::timestamptz;
+ IF started IS NULL OR (started AT TIME ZONE 'Asia/Kolkata')::date<>attendance_day OR started>now() OR(finished IS NOT NULL AND(finished<started OR finished>now() OR (finished AT TIME ZONE 'Asia/Kolkata')::date<>attendance_day)) THEN RAISE EXCEPTION 'Enter valid check-in/out times on the selected IST date, without future times' USING ERRCODE='23514';END IF;
+ END IF;
+ PERFORM pg_advisory_xact_lock(74192301);
+ INSERT INTO hospitalflow.staff_attendance(user_id,day,status,check_in,check_out,marked_by,approval_status,reviewed_by,reviewed_at,review_note)
+ VALUES(target,attendance_day,presence,started,finished,actor,'Approved',actor,now(),reason)
+ ON CONFLICT(hospital_id,user_id,day) DO UPDATE SET status=EXCLUDED.status,check_in=EXCLUDED.check_in,check_out=EXCLUDED.check_out,marked_by=actor,approval_status='Approved',reviewed_by=actor,reviewed_at=now(),review_note=reason,submitted_at=now() RETURNING id INTO record_id;
+ PERFORM hf_security.audit('attendance-admin-managed',record_id::text);
+ RETURN jsonb_build_object('reference',record_id,'state','Approved');
+END $$;
+REVOKE ALL ON FUNCTION hf_api.manage_staff_attendance(jsonb) FROM PUBLIC;
+DO $$ DECLARE definition text;BEGIN
+ SELECT pg_get_functiondef('hf_api.booking_command(text,jsonb,boolean)'::regprocedure) INTO definition;
+ definition:=replace(definition,' IF p_action NOT IN', ' IF p_action=''manage-attendance'' THEN RETURN hf_api.manage_staff_attendance(p);END IF;
+ IF p_action NOT IN');EXECUTE definition;
+END $$;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.019_attendance_hours_and_admin_review.sql','8CD54AD49453C6296BBCB0D248D1A314F1B3324940780AC4CA9820447381D315');
+
+-- 020_hospital_leave_calendar.sql
+-- Shared staff availability exposes approved dates and identities, never private leave reasons.
+CREATE FUNCTION hf_api.hospital_leave_calendar() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE actor text;today date:=(now() AT TIME ZONE 'Asia/Kolkata')::date;BEGIN
+ actor:=hf_api.booking_actor();
+ IF EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=actor) THEN RAISE EXCEPTION 'The hospital staff leave calendar is unavailable to patient accounts' USING ERRCODE='42501';END IF;
+ RETURN jsonb_build_object('hospitalId',hf_security.current_hospital(),'hospitalName',(SELECT name FROM hospitalflow.hospitals WHERE id=hf_security.current_hospital()),'asOf',today,
+ 'leaves',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',l.id,'name',u.name,'registrationId',u.registration_id,'role',u.role,'department',COALESCE(p.department,s.department,''),'startsOn',l.starts_on,'endsOn',l.ends_on,'daysRemaining',CASE WHEN l.starts_on<=today THEN l.ends_on-today+1 ELSE NULL END,'availability',CASE WHEN l.starts_on<=today THEN 'On leave' ELSE 'Upcoming' END) ORDER BY CASE WHEN l.starts_on<=today THEN 0 ELSE 1 END,l.starts_on,u.name),'[]')
+ FROM hospitalflow.staff_leaves l JOIN hospitalflow.users u ON u.id=l.user_id
+ JOIN hospitalflow.hospital_memberships m ON m.user_id=u.id AND m.hospital_id=l.hospital_id AND m.active
+ LEFT JOIN hospitalflow.person_profiles p ON p.user_id=u.id LEFT JOIN hospitalflow.staff_members s ON s.user_id=u.id AND s.hospital_id=l.hospital_id AND s.active
+ WHERE l.hospital_id=hf_security.current_hospital() AND l.status='Approved' AND l.ends_on>=today AND u.active AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=u.id)));
+END $$;
+REVOKE ALL ON FUNCTION hf_api.hospital_leave_calendar() FROM PUBLIC;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.020_hospital_leave_calendar.sql','702EEF923A81892D67D100B7CADBB1743BC57E1C4EEBE775EB5A003AA8AB1744');
+
+-- 021_admin_doctor_separation.sql
+INSERT INTO hospitalflow.roles(name) VALUES('Admin'),('Doctor'),('Developer') ON CONFLICT DO NOTHING;
+-- Preserve legacy clinician identities while making Doctor an explicit role.
+UPDATE hospitalflow.users u SET role='Doctor' WHERE role='User' AND EXISTS(SELECT 1 FROM hospitalflow.user_permissions WHERE user_id=u.id AND permission='Doctor') AND NOT EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=u.id);
+DELETE FROM hospitalflow.user_permissions p USING hospitalflow.users u WHERE p.user_id=u.id AND p.permission='Doctor' AND u.role<>'Developer';
+CREATE FUNCTION hf_security.separate_doctor_permission() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$ BEGIN
+ IF NEW.permission='Doctor' AND NOT EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=NEW.user_id AND role IN ('Doctor','Developer')) THEN RAISE EXCEPTION 'Assign the separate Doctor role instead of adding Doctor privileges to another role' USING ERRCODE='23514';END IF;RETURN NEW;END $$;
+CREATE TRIGGER separate_doctor_permission BEFORE INSERT OR UPDATE ON hospitalflow.user_permissions FOR EACH ROW EXECUTE FUNCTION hf_security.separate_doctor_permission();
+-- Administrative access never substitutes for a clinical author identity.
+CREATE FUNCTION hf_security.guard_clinical_author() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+DECLARE role_name text;BEGIN
+ SELECT role INTO role_name FROM hospitalflow.users WHERE id=hf_security.actor_id();
+ IF role_name='Admin' THEN
+ IF TG_TABLE_NAME='prescriptions' AND TG_OP='UPDATE' THEN
+ IF NEW.status<>'Cancelled' AND NEW.patient_id=OLD.patient_id AND NEW.medicine_id=OLD.medicine_id AND NEW.quantity=OLD.quantity AND NEW.instructions=OLD.instructions THEN RETURN NEW;END IF;
+ ELSIF TG_TABLE_NAME='follow_ups' AND TG_OP='UPDATE' AND (to_jsonb(NEW)-ARRAY['status','appointment_id','doctor_id'])=(to_jsonb(OLD)-ARRAY['status','appointment_id','doctor_id']) THEN RETURN NEW;
+ END IF;
+ RAISE EXCEPTION 'Clinical authoring requires Doctor or the appropriate clinical staff role; Admin manages hospital operations' USING ERRCODE='42501';END IF;
+ RETURN NEW;END $$;
+CREATE TRIGGER clinical_author BEFORE INSERT OR UPDATE ON hospitalflow.prescriptions FOR EACH ROW EXECUTE FUNCTION hf_security.guard_clinical_author();
+CREATE TRIGGER clinical_author BEFORE INSERT OR UPDATE ON hospitalflow.notes FOR EACH ROW EXECUTE FUNCTION hf_security.guard_clinical_author();
+CREATE TRIGGER clinical_author BEFORE INSERT OR UPDATE ON hospitalflow.clinical_orders FOR EACH ROW EXECUTE FUNCTION hf_security.guard_clinical_author();
+CREATE TRIGGER clinical_author BEFORE INSERT OR UPDATE ON hospitalflow.follow_ups FOR EACH ROW EXECUTE FUNCTION hf_security.guard_clinical_author();
+-- Guard the command boundary as well as native table/procedure writes.
+DO $$ DECLARE definition text;BEGIN SELECT pg_get_functiondef('hf_api.execute(text,jsonb,uuid,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,'BEGIN', 'BEGIN
+ IF p_action IN (''prescription'',''cancel-prescription'',''note'',''clinical-order'',''clinical-order-status'',''complete-clinical-order'',''follow-up'') AND EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=hf_security.actor_id() AND role=''Admin'') THEN RAISE EXCEPTION ''Admin cannot author clinical records; use a separate Doctor account'' USING ERRCODE=''42501'';END IF;');
+ EXECUTE definition;END $$;
+REVOKE ALL ON FUNCTION hf_security.separate_doctor_permission(),hf_security.guard_clinical_author() FROM PUBLIC;
+-- Admin may complete operational discharge, retaining the reason in admission_events.
+-- Clinical discharge notes remain authored by clinical staff rather than the administrator.
+DO $$ DECLARE definition text;BEGIN
+ SELECT pg_get_functiondef('hf_api.discharge_patient(text,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,'INSERT INTO hospitalflow.notes VALUES(hf_api.new_id(''NOTE''),a.patient_id,p_summary,''Discharge summary'',now());',
+ 'IF NOT EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=hf_security.actor_id() AND role=''Admin'') THEN INSERT INTO hospitalflow.notes VALUES(hf_api.new_id(''NOTE''),a.patient_id,p_summary,''Discharge summary'',now());END IF;');EXECUTE definition;
+END $$;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.021_admin_doctor_separation.sql','4F42A5E6BA2F2F8468F2117D69282C54A3B42AF46CD99F9CA0474E0901DCD71A');
+
+-- 022_medication_administration.sql
+-- Append-only evidence of medication actually provided; pharmacy dispensing is separate.
+CREATE TABLE hospitalflow.medication_administrations(
+ id uuid PRIMARY KEY DEFAULT gen_random_uuid(),hospital_id text NOT NULL DEFAULT hf_security.current_hospital() REFERENCES hospitalflow.hospitals(id),
+ prescription_id text NOT NULL REFERENCES hospitalflow.prescriptions(id),patient_id text NOT NULL REFERENCES hospitalflow.patients(id),
+ quantity integer NOT NULL CHECK(quantity>0),provided_by text NOT NULL REFERENCES hospitalflow.users(id),provided_at timestamptz NOT NULL DEFAULT now(),
+ note text NOT NULL CHECK(length(note) BETWEEN 1 AND 1000),retry_key uuid NOT NULL,UNIQUE(provided_by,retry_key));
+CREATE INDEX medication_administration_prescription ON hospitalflow.medication_administrations(hospital_id,prescription_id,provided_at);
+ALTER TABLE hospitalflow.medication_administrations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE hospitalflow.medication_administrations FORCE ROW LEVEL SECURITY;
+CREATE POLICY medication_read ON hospitalflow.medication_administrations FOR SELECT USING(hospital_id=hf_security.current_hospital() AND (hf_security.can_access_patient(patient_id) OR EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=hf_security.actor_id() AND patient_id=medication_administrations.patient_id)));
+CREATE POLICY medication_insert ON hospitalflow.medication_administrations FOR INSERT WITH CHECK(hospital_id=hf_security.current_hospital() AND provided_by=hf_security.actor_id() AND hf_security.can_access_patient(patient_id));
+CREATE TRIGGER immutable_ledger BEFORE UPDATE OR DELETE ON hospitalflow.medication_administrations FOR EACH ROW EXECUTE FUNCTION hospitalflow.prevent_ledger_changes();
+CREATE TRIGGER z_hospital_guard BEFORE INSERT OR UPDATE OR DELETE ON hospitalflow.medication_administrations FOR EACH ROW EXECUTE FUNCTION hf_security.guard_hospital_row();
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.medication_administrations FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+CREATE FUNCTION hf_api.medication_care() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+DECLARE actor text;role_name text;pid text;BEGIN
+ actor:=hf_api.booking_actor();SELECT role INTO role_name FROM hospitalflow.users WHERE id=actor;SELECT patient_id INTO pid FROM hospitalflow.patient_accounts WHERE user_id=actor;
+ IF pid IS NULL AND role_name NOT IN ('Doctor','Nurse','Admin','Developer') THEN RAISE EXCEPTION 'Clinical care access is required' USING ERRCODE='42501';END IF;
+ RETURN jsonb_build_object('prescriptions',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',p.id,'patientId',p.patient_id,'patientName',pt.name,'patientCode',pt.registration_id,'medicine',m.name,'quantity',p.quantity,'instructions',p.instructions,'status',p.status,'provided',COALESCE((SELECT sum(a.quantity) FROM hospitalflow.medication_administrations a WHERE a.prescription_id=p.id),0)) ORDER BY p.created_at DESC),'[]') FROM hospitalflow.prescriptions p JOIN hospitalflow.patients pt ON pt.id=p.patient_id JOIN hospitalflow.medicine_batches m ON m.id=p.medicine_id WHERE p.hospital_id=hf_security.current_hospital() AND (CASE WHEN pid IS NOT NULL THEN p.patient_id=pid ELSE hf_security.can_access_patient(p.patient_id) END)),
+ 'administrations',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',a.id,'prescriptionId',a.prescription_id,'patientId',a.patient_id,'quantity',a.quantity,'providedAt',a.provided_at,'providedBy',u.name,'staffId',u.registration_id,'note',a.note) ORDER BY a.provided_at DESC),'[]') FROM hospitalflow.medication_administrations a JOIN hospitalflow.users u ON u.id=a.provided_by WHERE a.hospital_id=hf_security.current_hospital() AND (CASE WHEN pid IS NOT NULL THEN a.patient_id=pid ELSE hf_security.can_access_patient(a.patient_id) END)));
+END $$;
+CREATE FUNCTION hf_api.provide_medication(p_prescription text,p_quantity integer,p_note text,p_key uuid) RETURNS uuid LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+DECLARE actor text;rx hospitalflow.prescriptions%ROWTYPE;existing hospitalflow.medication_administrations%ROWTYPE;result uuid;BEGIN
+ actor:=hf_api.booking_actor();
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=actor AND role IN ('Nurse','Developer')) OR EXISTS(SELECT 1 FROM hospitalflow.patient_accounts WHERE user_id=actor) THEN RAISE EXCEPTION 'Only nursing staff may record medication provided' USING ERRCODE='42501';END IF;
+ PERFORM pg_advisory_xact_lock(74192301);
+ SELECT * INTO existing FROM hospitalflow.medication_administrations WHERE provided_by=actor AND retry_key=p_key;
+ IF FOUND THEN IF existing.prescription_id<>p_prescription OR existing.quantity<>p_quantity OR existing.note<>btrim(p_note) OR existing.hospital_id<>hf_security.current_hospital() THEN RAISE EXCEPTION 'Retry key was already used for a different record' USING ERRCODE='23514';END IF;RETURN existing.id;END IF;
+ SELECT * INTO rx FROM hospitalflow.prescriptions WHERE id=p_prescription AND hospital_id=hf_security.current_hospital() FOR UPDATE;
+ IF NOT FOUND OR NOT hf_security.can_access_patient(rx.patient_id) THEN RAISE EXCEPTION 'Prescription is outside your care access' USING ERRCODE='42501';END IF;
+ IF rx.status<>'Dispensed' THEN RAISE EXCEPTION 'Pharmacy must dispense this prescription before administration is recorded' USING ERRCODE='23514';END IF;
+ IF p_quantity IS NULL OR p_quantity<1 OR p_note IS NULL OR length(btrim(p_note)) NOT BETWEEN 1 AND 1000 OR p_key IS NULL THEN RAISE EXCEPTION 'Enter a positive quantity and administration note (up to 1000 characters)' USING ERRCODE='23514';END IF;
+ IF p_quantity+COALESCE((SELECT sum(quantity) FROM hospitalflow.medication_administrations WHERE prescription_id=rx.id),0)>rx.quantity THEN RAISE EXCEPTION 'Provided quantity exceeds the prescribed quantity remaining' USING ERRCODE='23514';END IF;
+ INSERT INTO hospitalflow.medication_administrations(prescription_id,patient_id,quantity,provided_by,note,retry_key) VALUES(rx.id,rx.patient_id,p_quantity,actor,btrim(p_note),p_key) RETURNING id INTO result;
+ RETURN result;
+END $$;
+REVOKE ALL ON hospitalflow.medication_administrations FROM PUBLIC;
+REVOKE ALL ON FUNCTION hf_api.medication_care(),hf_api.provide_medication(text,integer,text,uuid) FROM PUBLIC;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.022_medication_administration.sql','C2B00BCF754752384472ED41F757D5A67222C082CE87D2E96D0C840A12577054');
+
+-- 023_staff_first_login.sql
+-- New staff registrations require DOB verification and a replacement password before sessions.
+-- Existing accounts keep their credentials and activation status.
+CREATE TABLE hospitalflow.staff_onboarding(
+ user_id text PRIMARY KEY REFERENCES hospitalflow.users(id),must_change_password boolean NOT NULL DEFAULT true,
+ expires_at timestamptz NOT NULL DEFAULT now()+interval '24 hours',activated_at timestamptz,
+ CHECK(must_change_password OR activated_at IS NOT NULL));
+REVOKE ALL ON hospitalflow.staff_onboarding FROM PUBLIC;
+ALTER TABLE hospitalflow.patient_login_challenges DROP CONSTRAINT patient_login_challenges_user_id_fkey;
+ALTER TABLE hospitalflow.patient_login_challenges ADD CONSTRAINT first_login_challenge_user_fkey FOREIGN KEY(user_id) REFERENCES hospitalflow.users(id);
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.023_staff_first_login.sql','4184C690DD0AA5D020C2BE44D25814C108D86BB04AC83CC8CD6A087A1B4BD3D3');
+
+-- 024_visit_prescriptions.sql
+CREATE TABLE hospitalflow.prescription_visits(
+ prescription_id text PRIMARY KEY REFERENCES hospitalflow.prescriptions(id),appointment_id text NOT NULL REFERENCES hospitalflow.appointments(id),
+ hospital_id text NOT NULL DEFAULT hf_security.current_hospital() REFERENCES hospitalflow.hospitals(id));
+CREATE INDEX prescription_visit_lookup ON hospitalflow.prescription_visits(hospital_id,appointment_id);
+ALTER TABLE hospitalflow.prescription_visits ENABLE ROW LEVEL SECURITY;
+CREATE POLICY visit_prescription_scope ON hospitalflow.prescription_visits USING(hospital_id=hf_security.current_hospital());
+CREATE TRIGGER immutable_ledger BEFORE UPDATE OR DELETE ON hospitalflow.prescription_visits FOR EACH ROW EXECUTE FUNCTION hospitalflow.prevent_ledger_changes();
+CREATE TRIGGER z_hospital_guard BEFORE INSERT OR UPDATE OR DELETE ON hospitalflow.prescription_visits FOR EACH ROW EXECUTE FUNCTION hf_security.guard_hospital_row();
+CREATE TRIGGER record_history AFTER INSERT OR UPDATE OR DELETE ON hospitalflow.prescription_visits FOR EACH ROW EXECUTE FUNCTION hospitalflow.record_row_history();
+CREATE FUNCTION hf_security.is_visit_doctor(p_doctor text) RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,pg_temp AS $$
+ SELECT EXISTS(SELECT 1 FROM hospitalflow.users u WHERE u.id=hf_security.actor_id() AND u.active AND (u.role='Developer' OR(u.role='Doctor' AND (EXISTS(SELECT 1 FROM hospitalflow.person_profiles p WHERE p.user_id=u.id AND p.doctor_id=p_doctor) OR EXISTS(SELECT 1 FROM hospitalflow.staff_members s WHERE s.user_id=u.id AND s.doctor_id=p_doctor AND s.hospital_id=hf_security.current_hospital() AND s.active))))) $$;
+CREATE FUNCTION hf_security.guard_doctor_visit() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$ BEGIN
+ IF NEW.status IS DISTINCT FROM OLD.status AND EXISTS(SELECT 1 FROM hospitalflow.users WHERE id=hf_security.actor_id() AND role='Doctor') THEN
+ IF NOT hf_security.is_visit_doctor(OLD.doctor_id) THEN RAISE EXCEPTION 'Only the assigned doctor can manage this consultation' USING ERRCODE='42501';END IF;
+ IF NEW.status='In consultation' THEN INSERT INTO hospitalflow.patient_access_grants(user_id,patient_id,purpose,expires_at,granted_by) VALUES(hf_security.actor_id(),NEW.patient_id,'Assigned appointment consultation',now()+interval '30 days',hf_security.actor_id());END IF;
+ END IF;RETURN NEW;END $$;
+CREATE TRIGGER doctor_visit BEFORE UPDATE ON hospitalflow.appointments FOR EACH ROW EXECUTE FUNCTION hf_security.guard_doctor_visit();
+-- Reception still manages the queue; assigned Doctors can advance their own visits.
+DO $$ DECLARE definition text;BEGIN
+ SELECT pg_get_functiondef('hf_api.set_appointment_status(text,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,'require_actor(ARRAY[''Reception''])','require_actor(ARRAY[''Reception'',''Doctor''])');EXECUTE definition;
+ SELECT pg_get_functiondef('hf_api.execute(text,jsonb,uuid,text)'::regprocedure) INTO definition;
+ definition:=replace(definition,'allowed:=CASE','allowed:=CASE WHEN p_action=''appointment-status'' THEN ARRAY[''Reception'',''Doctor'']');EXECUTE definition;
+END $$;
+CREATE FUNCTION hf_api.prescribe_visit(p_appointment text,p_payload jsonb,p_key uuid,p_hash text) RETURNS text LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_api,pg_temp AS $$
+DECLARE actor text;a hospitalflow.appointments%ROWTYPE;rx text;BEGIN
+ actor:=hf_api.booking_actor();PERFORM pg_advisory_xact_lock(74192301);
+ SELECT * INTO a FROM hospitalflow.appointments WHERE id=p_appointment AND hospital_id=hf_security.current_hospital() FOR UPDATE;
+ IF NOT FOUND OR NOT hf_security.is_visit_doctor(a.doctor_id) THEN RAISE EXCEPTION 'Only the assigned doctor can prescribe for this visit' USING ERRCODE='42501';END IF;
+ IF a.status NOT IN ('In consultation','Completed') THEN RAISE EXCEPTION 'Start the consultation before prescribing' USING ERRCODE='23514';END IF;
+ IF p_payload ? 'patientId' AND p_payload->>'patientId' IS DISTINCT FROM a.patient_id THEN RAISE EXCEPTION 'Prescription patient must match the selected appointment' USING ERRCODE='23514';END IF;
+ rx:=hf_api.execute('prescription',p_payload||jsonb_build_object('patientId',a.patient_id),p_key,p_hash);
+ INSERT INTO hospitalflow.prescription_visits(prescription_id,appointment_id) VALUES(rx,a.id) ON CONFLICT(prescription_id) DO NOTHING;
+ IF NOT EXISTS(SELECT 1 FROM hospitalflow.prescription_visits WHERE prescription_id=rx AND appointment_id=a.id) THEN RAISE EXCEPTION 'Prescription already belongs to a different visit' USING ERRCODE='23514';END IF;
+ RETURN rx;
+END $$;
+REVOKE ALL ON hospitalflow.prescription_visits FROM PUBLIC;
+REVOKE ALL ON FUNCTION hf_security.is_visit_doctor(text),hf_security.guard_doctor_visit(),hf_api.prescribe_visit(text,jsonb,uuid,text) FROM PUBLIC;
+CREATE OR REPLACE FUNCTION hf_api.medication_care() RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path=pg_catalog,hospitalflow,hf_security,pg_temp AS $$
+DECLARE actor text;role_name text;pid text;BEGIN
+ actor:=hf_api.booking_actor();SELECT role INTO role_name FROM hospitalflow.users WHERE id=actor;SELECT patient_id INTO pid FROM hospitalflow.patient_accounts WHERE user_id=actor;
+ IF pid IS NULL AND role_name NOT IN ('Doctor','Nurse','Admin','Developer') AND NOT EXISTS(SELECT 1 FROM hospitalflow.user_permissions WHERE user_id=actor AND permission='Pharmacist') THEN RAISE EXCEPTION 'Clinical care access is required' USING ERRCODE='42501';END IF;
+ RETURN jsonb_build_object('visits',(SELECT COALESCE(jsonb_agg(a.id),'[]') FROM hospitalflow.appointments a WHERE a.hospital_id=hf_security.current_hospital() AND hf_security.is_visit_doctor(a.doctor_id)),'prescriptions',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',p.id,'patientId',p.patient_id,'patientName',pt.name,'patientCode',pt.registration_id,'medicine',m.name,'quantity',p.quantity,'instructions',p.instructions,'status',p.status,'createdAt',p.created_at,'appointmentId',(SELECT appointment_id FROM hospitalflow.prescription_visits WHERE prescription_id=p.id),'visitAt',(SELECT a.at FROM hospitalflow.prescription_visits v JOIN hospitalflow.appointments a ON a.id=v.appointment_id WHERE v.prescription_id=p.id),'prescriber',(SELECT u.name FROM hospitalflow.prescription_authors pa JOIN hospitalflow.users u ON u.id=pa.created_by WHERE pa.prescription_id=p.id),'billId',(SELECT bill_id FROM hospitalflow.prescription_dispensations WHERE prescription_id=p.id),'dispensedAt',(SELECT at FROM hospitalflow.prescription_dispensations WHERE prescription_id=p.id),'provided',COALESCE((SELECT sum(a.quantity) FROM hospitalflow.medication_administrations a WHERE a.prescription_id=p.id),0)) ORDER BY p.created_at DESC),'[]') FROM hospitalflow.prescriptions p JOIN hospitalflow.patients pt ON pt.id=p.patient_id JOIN hospitalflow.medicine_batches m ON m.id=p.medicine_id WHERE p.hospital_id=hf_security.current_hospital() AND (CASE WHEN pid IS NOT NULL THEN p.patient_id=pid ELSE hf_security.can_access_patient(p.patient_id) OR EXISTS(SELECT 1 FROM hospitalflow.user_permissions WHERE user_id=actor AND permission='Pharmacist') END)),
+ 'administrations',(SELECT COALESCE(jsonb_agg(jsonb_build_object('id',a.id,'prescriptionId',a.prescription_id,'patientId',a.patient_id,'quantity',a.quantity,'providedAt',a.provided_at,'providedBy',u.name,'staffId',u.registration_id,'note',a.note) ORDER BY a.provided_at DESC),'[]') FROM hospitalflow.medication_administrations a JOIN hospitalflow.users u ON u.id=a.provided_by WHERE a.hospital_id=hf_security.current_hospital() AND (CASE WHEN pid IS NOT NULL THEN a.patient_id=pid ELSE hf_security.can_access_patient(a.patient_id) END)));
+END $$;
+REVOKE ALL ON FUNCTION hf_api.medication_care() FROM PUBLIC;
+
+INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('HospitalFlow.Database.Migrations.024_visit_prescriptions.sql','5394717203ABE5C6F9F1ADEB4C5461B1F26252022F871127C22E8CA020C8716D');
 COMMIT;
 -- Provision the restricted application login separately; no password is embedded here.

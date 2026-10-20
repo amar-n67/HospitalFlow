@@ -106,6 +106,30 @@ if __name__=='__main__':
             check_accounts(base,sql,folder,Client,PASSWORD)
             from patient_portal import check_patient_portal
             check_patient_portal(base,sql,folder,Client,PASSWORD)
+            from people import check_people
+            check_people(base,sql,Client,PASSWORD)
+            from workspaces import check_workspaces
+            check_workspaces(base,sql,folder,Client,PASSWORD)
+            from documents_and_validation import check_documents_and_validation
+            check_documents_and_validation(base,sql,Client,PASSWORD)
+            from hospital_network import check_hospital_network
+            check_hospital_network(base,sql,Client,PASSWORD)
+            from booking import check_booking
+            check_booking(base,sql,Client,PASSWORD)
+            from department_booking import check_department_booking
+            check_department_booking(base,sql,Client,PASSWORD)
+            from attendance_approval import check_attendance_approval
+            check_attendance_approval(base,sql,Client,PASSWORD)
+            from leave_calendar import check_leave_calendar
+            check_leave_calendar(base,sql,Client,PASSWORD)
+            from role_separation import check_role_separation
+            check_role_separation(base,sql,Client,PASSWORD)
+            from medication_care import check_medication_care
+            check_medication_care(base,sql,Client)
+            from first_login import check_first_login
+            check_first_login(base,sql,Client)
+            from visit_prescriptions import check_visit_prescriptions
+            check_visit_prescriptions(base,sql,Client)
             # Disable user invalidates existing database session immediately.
             receptionist=Client(base);receptionist.login('reception')
             rid=next(u['id'] for u in c.request('/api/state')['users'] if 'Reception' in u['permissions'] and u['name']=='Reception Demo')
@@ -129,12 +153,13 @@ if __name__=='__main__':
             assert migration.returncode==0,migration.stderr
             sql((ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text(),database='hospitalflow_production_test')
             prod_runtime=prod_owner.replace('Username=hospitalflow_owner','Username=hospitalflow_app')
-            runtime_prod={**prod_env,'ConnectionStrings__HospitalFlow':prod_runtime,'Security__KeyEncryptionCertificate':pfx,'Security__KeyEncryptionCertificatePassword':cert_env['HF_TEST_PFX_PASSWORD'],'Kestrel__Certificates__Default__Path':pfx,'Kestrel__Certificates__Default__Password':cert_env['HF_TEST_PFX_PASSWORD']}
+            runtime_prod={**prod_env,'Payments__Mode':'Test','ConnectionStrings__HospitalFlow':prod_runtime,'Security__KeyEncryptionCertificate':pfx,'Security__KeyEncryptionCertificatePassword':cert_env['HF_TEST_PFX_PASSWORD'],'Kestrel__Certificates__Default__Path':pfx,'Kestrel__Certificates__Default__Password':cert_env['HF_TEST_PFX_PASSWORD']}
             prod_url=f'https://127.0.0.1:{port()}';tls_context=ssl.create_default_context(cafile=cert)
             launch(prod_url,runtime_prod,tls_context)
             prod=Client(prod_url,tls_context);prod.login()
             assert all(cookie.secure for cookie in prod.jar)
             assert prod.request('/api/state')['patients']==[]
+            assert prod.request('/api/booking')['paymentMode']=='Disabled'
             assert len(prod.request('/api/state')['users'])==1
             assert sql("SELECT bool_and(xml LIKE '%encryptedSecret%') FROM hospitalflow.data_protection_keys;",database='hospitalflow_production_test')=='t'
             without_certificate={**prod_env,'ConnectionStrings__HospitalFlow':prod_runtime}
@@ -142,6 +167,10 @@ if __name__=='__main__':
             assert refused.returncode!=0 and 'Production requires' in refused.stderr
             print('PASS: fresh Production bootstrap, HTTPS with validated test certificate, Secure session cookie, encrypted database-held keys, no demo data and missing-certificate startup refusal.')
             print('PASS: normalized tables, repeatable migrations, limited runtime grants, immutable ledgers, FK/check/deferred constraints, stock reconciliation, durable bed history, cross-instance payment idempotency, persisted sessions, notifications, access/rejection logging, user revocation password changes, patient updates, bed creation and backup/restore.')
+        except Exception:
+            for process,log in processes:
+                log.flush();log.seek(0);print(log.read()[-6000:])
+            raise
         finally:
             for process,log in processes:
                 if process.poll() is None:process.terminate();process.wait(timeout=10)

@@ -36,3 +36,6 @@ const operations=[
  ['notification-ack','Operations','Acknowledge notification',[['id','Notification','notifications'],['reason','Acknowledgement note']]]
 ];
 const operationRecords=[['suppliers','Suppliers'],['purchase_orders','Purchase orders'],['purchase_order_lines','Purchase order items'],['goods_receipts','Goods receipts'],['medicine_batch_holds','Batch holds'],['stock_reservations','Stock reservations'],['service_catalog','Services'],['service_prices','Service prices'],['payment_reversals','Payment reversals'],['provider_sessions','Provider sessions'],['provider_absences','Provider absences'],['staff_members','Staff members'],['patient_contacts','Patient contacts'],['patient_consents','Patient consents'],['patient_access_grants','Patient access grants'],['discharge_tasks','Discharge checklist'],['follow_ups','Follow-ups'],['clinical_orders','Clinical orders']];
+
+const clinicalOperationNames=["prescription","cancel-prescription","note","clinical-order","clinical-order-status","complete-clinical-order","follow-up"];
+function availableOperations(){return operations.filter(o=>me.role!=="Admin"||!clinicalOperationNames.includes(o[0]));}

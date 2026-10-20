@@ -18,7 +18,7 @@ def check_patient_portal(base,sql,folder,Client,password):
             time.sleep(.1)
         raise AssertionError('Patient invitation not delivered to private '+kind+' pickup')
     mail,temporary=invitation(email);sms,sms_password=invitation(email,'sms')
-    assert sms_password==temporary and sms['To']=='+919000012345' and pid in sms['Body'] and 'localhost:5136' in mail['Body']
+    assert sms_password==temporary and sms['To']=='+919000012345' and patient['registrationId'] in sms['Body'] and 'localhost:5136' in mail['Body']
     assert sql("SELECT count(*) FROM hospitalflow.patient_accounts WHERE patient_id='"+pid+"';")=='1'
     sql("UPDATE hospitalflow.patient_accounts SET temporary_expires_at=now()-interval '1 minute' WHERE patient_id='"+pid+"';")
     anon.request('/api/login',{'email':pid,'password':temporary},401)
@@ -54,10 +54,10 @@ def check_patient_portal(base,sql,folder,Client,password):
     sql("INSERT INTO hospitalflow.user_permissions VALUES('"+patient_user['id']+"','Doctor');",ok=False)
     portal.request('/api/account/theme',{'theme':'Dark'});assert portal.request('/api/me')['theme']=='Dark'
     portal.request('/api/account/theme',{'theme':'Unsupported'},409)
-    by_id=Client(base);by_id.request('/api/login',{'email':pid,'password':'Willow!7'});assert by_id.request('/api/me')['patientId']==pid
+    by_id=Client(base);by_id.request('/api/login',{'email':patient['registrationId'],'password':'Willow!7'});assert by_id.request('/api/me')['patientId']==pid
     # A doctor can register a new patient; retries do not create duplicate accounts/messages.
     doctor=Client(base);doctor.login('doctor')
-    new={'name':'Synthetic Portal Recipient','dob':'1991-06-15','sex':'Other','phone':'+919000033333','email':'portal.recipient@example.test'}
+    new={'name':'Synthetic Portal Recipient','dob':'1991-06-15','sex':'Other','phone':'9000033333','email':'portal.recipient@example.test'}
     key=str(uuid.uuid4());saved=doctor.action('patient',new,key=key);assert doctor.action('patient',new,key=key)==saved
     second=next(p for p in admin.request('/api/state')['patients'] if p.get('email')==new['email'])
     assert sql("SELECT count(*) FROM hospitalflow.account_mail m JOIN hospitalflow.users u ON u.id=m.user_id WHERE u.email='portal.recipient@example.test';")=='1'

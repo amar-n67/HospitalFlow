@@ -30,9 +30,13 @@ Sign in with an existing HospitalFlow account. Database credentials are separate
 
 ## Accounts and administration
 
-Three roles are available: **User** with explicitly assigned operational permissions, **Admin** with full application access, and **Developer** with full application access. Signup requires email verification and administrator approval. Forgot-password links expire and work once. Email syntax is validated, and new passwords require at least 6 characters with uppercase, lowercase and a symbol; common passwords and account identities are rejected. As requested, development emails are saved privately under `.local/mail/`; SMTP will be configured later.
+Roles now include **Admin, Doctor, Nurse, Patient (User), Volunteer and Developer**. Admin/Developer have full access; Doctor can register doctors, nurses, patients and volunteers; Nurse has nursing responsibilities; patient/volunteer access is limited. See [people and roles](docs/PEOPLE_AND_ROLES.md). Signup requires email verification and administrator approval. Forgot-password links expire and work once. Email syntax is validated, and new passwords require at least 6 characters with uppercase, lowercase and a symbol; common passwords and account identities are rejected. As requested, development emails are saved privately under `.local/mail/`; SMTP will be configured later.
 
 Use **Administration** for account approval, role/permission management, user creation and system health; use **Operations controls** for the expanded business workflows. Existing accounts and staff permissions were preserved. See [accounts and access](docs/ACCOUNTS_AND_ACCESS.md) for instructions and production mail settings.
+
+## People and registrations
+
+Use **People & registrations → Add person** to choose the registration type. IDs are generated as **A / D / N / P / V / DEV**. Patient and staff directories include IDs, name, email, mobile, DOB and relevant department/job details; existing unknown fields remain unfilled. The new codes are stored in PostgreSQL, while existing internal keys and history are preserved.
 
 ## Patient portal and appearance
 
@@ -42,7 +46,7 @@ The application consistently uses port **5136**. Required inputs show `*`. Use t
 
 ## Database structure
 
-Eleven checksum-protected migrations create **72 tables, 23 procedures, 38 functions, 97 row triggers, 2 event triggers, 14 views, 1 materialized view, 4 row-security policies and 136 indexes**. `schema_versions` records checksums of applied migrations. `idempotency_hash_keys` holds the random key used to protect retry fingerprints.
+Fifteen checksum-protected migrations create **80 tables, 23 procedures, 51 functions, 157 row triggers, 2 event triggers, 14 views, 1 materialized view, 51 row-security policies and 200 indexes**. `schema_versions` records checksums of applied migrations. `idempotency_hash_keys` holds the random key used to protect retry fingerprints.
 
 See the [enterprise database guide](docs/ENTERPRISE_DATABASE.md) and [installed object catalogue](docs/DATABASE_OBJECTS.md) for the complete inventory and transaction behavior. Main source locations:
 
@@ -102,4 +106,14 @@ Production startup requires a PostgreSQL runtime connection and an encryption ce
 
 See [deployment](docs/DEPLOYMENT.md) for exact settings. The local review instance runs in **Development** on loopback HTTP. A public production host, trusted HTTPS certificate, encrypted backups, monitoring, recovery targets and hospital-specific access policies must be configured and validated before real patient use. The code change and local tests alone do not certify a live hospital deployment.
 
-Operational screens currently share a broad, role-filtered state snapshot, and write transactions are serialized across the application. These choices provide consistent behavior at the current scale, but require server-side record pagination, department/patient scoping and measured load tests for larger deployments. Provider sessions/absences, procurement, reservations, price catalogues and local payment reversals have Admin/Developer forms in Operations controls. Signup, verification, password reset and three-role access management are implemented; see [accounts and access](docs/ACCOUNTS_AND_ACCESS.md). SMTP configuration, MFA, controlled patient merges, external payment processing, SMS delivery and FHIR interfaces remain deployment or future work.
+Operational screens currently share a broad, role-filtered state snapshot, and write transactions are serialized across the application. These choices provide consistent behavior at the current scale, but require server-side record pagination, department/patient scoping and measured load tests for larger deployments. Provider sessions/absences, procurement, reservations, price catalogues and local payment reversals have Admin/Developer forms in Operations controls. Signup, verification, password reset and role-based access management are implemented; see [accounts and access](docs/ACCOUNTS_AND_ACCESS.md). SMTP configuration, MFA, controlled patient merges, external payment processing, SMS delivery and FHIR interfaces remain deployment or future work.
+
+Personal workspaces: [patient, nurse and volunteer pages, contact editing, verified email changes and assignments](docs/ROLE_WORKSPACES.md).
+
+[Mobile validation, record printing/downloads and overview navigation](docs/PRINTING_AND_VALIDATION.md).
+
+[Multi-hospital access, directory, referrals and retained history](docs/HOSPITAL_NETWORK.md): the original hospital plus 20 labelled demonstration hospitals and 40 fictional provider profiles. Use the hospital selector to change authorised workspaces.
+
+Appointment booking and staff attendance: see [the workflow guide](docs/APPOINTMENTS_AND_ATTENDANCE.md) for 10-minute slots, the two-hour cutoff, ₹200–₹750 fees, local test payments, cash refunds and doctor leave warnings.
+
+Admin and Doctor are separate roles: see [the role guide](docs/ADMIN_AND_DOCTOR_ROLES.md) for management, clinical authoring and Developer access.

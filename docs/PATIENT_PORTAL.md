@@ -18,9 +18,9 @@ Use the top-right **Dark / Default** button, or **double-click anywhere inside t
 
 ## Register and invite a patient
 
-An Admin, Developer or User with the Doctor/Reception responsibility can register a patient through **Patients → Register patient**. Enter the patient's full name, date of birth, sex, mobile and a unique email address. Mobile numbers with ten digits use the local +91 default; other international numbers must include `+` and the country code.
+An Admin, Developer or User with the Doctor/Reception responsibility can register a patient through **Patients → Register patient**. Enter the patient's full name, date of birth, sex, mobile and a unique email address. Mobile fields accept exactly ten digits, without spaces or country codes. The SMS transport adds `+91` when composing the message.
 
-The system generates the patient ID and, in the same transaction:
+The system generates the public **P-… patient ID** (stored as `registration_id`) and, in the same transaction:
 
 1. Saves the patient record.
 2. Creates a separate limited **User** account linked to that patient.
@@ -68,3 +68,21 @@ The portal does not expose staff notes, other patients, inventory movements, acc
 The build and isolated PostgreSQL/API suite pass, including the generated schema installer. Tests cover Doctor registration, automatic IDs, atomic invitation creation, retries, duplicate email rollback, encrypted queues/private pickup permissions, temporary expiry, DOB failures, mandatory password change, old credential rejection, email/ID sign-in, invitation reissue, recovery bypass prevention, staff/patient privilege separation, cross-patient read denial and persisted themes. Existing hospital workflow tests also pass.
 
 Browser review verifies both themes, double-click switching and required markers on the patient form. No live sample patient or patient account was created solely for these tests. The original Admin account and existing business records are preserved.
+
+## Registration types and expanded details
+
+The unified **People & registrations → Add person** flow now supports Doctor, Nurse, Patient, Volunteer, Admin and Developer according to the caller’s access. Patient/staff screens include the new public IDs and appropriate email/mobile/DOB/contact fields. Existing internal IDs and history are preserved. See [people and roles](PEOPLE_AND_ROLES.md) for prefixes, database columns and registration permissions.
+
+See [Role workspaces](ROLE_WORKSPACES.md) for patient care pages, contact editing, verified email changes, automatic age and the nurse/volunteer assignment workflows.
+
+See [Printing and validation](PRINTING_AND_VALIDATION.md) for ten-digit mobile fields, record copies, Save as PDF, and the new overview navigation.
+
+See [Hospital network](HOSPITAL_NETWORK.md) for the hospital selector, doctor referrals and retained history tree. Patient appointment, prescription and invoice pages follow the selected hospital; Hospital history shows their own earlier records across hospitals.
+
+Appointment self-booking, 10-minute slots, payment holds, rescheduling and refunds are described in [Appointments and attendance](APPOINTMENTS_AND_ATTENDANCE.md). Online methods currently use visibly labelled local test payments.
+
+Patients can view timestamped nursing records of medication provided under **My care → Medication administration history**. See [Prescription administration](MEDICATION_ADMINISTRATION.md) for the Doctor, Nurse and patient workflow.
+
+New patient registrations now use the server-set initial password **1234**. The registration form does not ask for a password. At first login, users must verify the registered DOB and choose a password meeting the normal rules before a session is created. Existing activated accounts keep their passwords. Initial patient invitations expire after 24 hours and can be reissued through the existing invitation action.
+
+Visit prescriptions now retain the appointment reference, prescriber and recorded date. Under **My care**, patients can see pharmacy-generated medicine invoices and dispensing timestamps alongside nursing administration history. See [Appointment consultation workflow](MEDICATION_ADMINISTRATION.md#appointment-consultation-workflow).

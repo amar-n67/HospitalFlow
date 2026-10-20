@@ -1,8 +1,8 @@
 # HospitalFlow enterprise database foundation
 
-The installed database is `hospitalflow` on `localhost:5432`, on the existing PostgreSQL server. Existing business records were preserved and compared against a protected pre-migration snapshot. No other database was migrated. Eleven ordered migrations are recorded with SHA-256 checksums; applied migrations must never be edited.
+The installed database is `hospitalflow` on `localhost:5432`, on the existing PostgreSQL server. Existing business records were preserved and compared against a protected pre-migration snapshot. No other database was migrated. Fifteen ordered migrations are recorded with SHA-256 checksums; applied migrations must never be edited.
 
-The installed catalogue contains **72 tables, 23 procedures, 38 functions, 97 row triggers, 2 event triggers, 14 views, 1 materialized view, 4 row-security policies, 136 indexes, 5 sequences and 2 enum types**. See [every object, column, constraint and routine signature](DATABASE_OBJECTS.md).
+The installed catalogue contains **80 tables, 23 procedures, 51 functions, 157 row triggers, 2 event triggers, 14 views, 1 materialized view, 51 row-security policies, 200 indexes, 6 sequences and 2 enum types**. See [every object, column, constraint and routine signature](DATABASE_OBJECTS.md).
 
 ## Find inventory in pgAdmin
 
@@ -59,7 +59,7 @@ Constraints and triggers enforce stock/ledger equality, reservation capacity, po
 
 `hospitalflow_app` does not own the schema and cannot perform schema DDL or rewrite immutable ledgers. `hospitalflow_jobs` inherits only the fixed maintenance role, can execute allowlisted maintenance and read aggregate health, and cannot read clinical tables. Credentials are excluded from Git and stored in owner-readable local files. Production should use a secret manager and a separate backup operator identity.
 
-Four row-security policies cover contacts, consents, follow-ups and clinical orders through patient/department access. Existing core operational snapshots remain broader and role-filtered. This is not complete hospital-wide row isolation; extend the query/access model before a deployment requiring stricter boundaries.
+Fifty-one row-security policies now fence operational records by hospital. Contacts, consents, follow-ups and clinical orders retain additional patient/department policies. Core module permissions remain broad within the selected hospital; patient portal reads remain limited to the authenticated patient. See [hospital network boundaries and retained history](HOSPITAL_NETWORK.md).
 
 ## Activity and audit
 

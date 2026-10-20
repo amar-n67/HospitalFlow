@@ -74,8 +74,8 @@ def check_accounts(base,sql,folder,Client,password):
     user.request('/api/admin/account',manage('User'),409) # self-demotion blocked
     admin.request('/api/admin/account',manage(active=False))
     user.request('/api/state',expected=401)
-    assert sql("SELECT count(*) FROM hospitalflow.roles;")=='3'
+    assert sql("SELECT count(*) FROM hospitalflow.roles;")=='6'
     assert sql("SELECT count(*) FROM hospitalflow.account_tokens WHERE token_hash !~ '^[A-F0-9]{64}$';")=='0'
     assert sql("SELECT bool_and(encrypted_message NOT LIKE '%token=%') FROM hospitalflow.account_mail;")=='t'
     print('PASS: six-character minimum, email syntax, uppercase/lowercase/symbol rules, common-password and identity rejection across account flows.')
-    print('PASS: signup privilege rejection, verification/approval, three roles, permission boundaries, session revocation, private mail, generic recovery responses and single-use password reset.')
+    print('PASS: signup privilege rejection, verification/approval, role assignments, permission boundaries, session revocation, private mail, generic recovery responses and single-use password reset.')
