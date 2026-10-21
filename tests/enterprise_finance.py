@@ -48,7 +48,9 @@ def check_enterprise_finance(base,sql,Client):
     assert sql('SELECT COALESCE(sum(unit_price),0) FROM hospitalflow.invoice_line_context;')==historical
     # Authorized Doctors and Pharmacy can discount their scope, without enabling nursing credits.
     doctor_bill=admin.action('bill',{'patientId':pid,'description':'Synthetic Doctor discount','amount':100})['reference']
-    command(doctor,'discount',{'invoiceId':doctor_bill,'amount':10,'reason':'Synthetic treating Doctor approval'})
+    command(doctor,'discount',{'invoiceId':doctor_bill,'amount':10,'reason':'Rejected Doctor edit'},403)
+    reception=Client(base);reception.login('reception')
+    command(reception,'discount',{'invoiceId':doctor_bill,'amount':10,'reason':'Synthetic Reception approval'})
     pharmacy=Client(base);pharmacy.request('/api/login',{'email':'visit.pharmacy@example.test','password':'Cedar!928'});pharmacy.hospital='H-0001'
     command(pharmacy,'discount',{'invoiceId':doctor_bill,'amount':1,'reason':'Wrong invoice category'},403)
     rx=doctor.action('prescription',{'patientId':pid,'medicineId':med['id'],'quantity':1,'instructions':'Synthetic medicine invoice fixture'})['reference']
@@ -95,3 +97,33 @@ def check_enterprise_finance(base,sql,Client):
     sql("UPDATE hospitalflow.invoice_discounts SET amount=1 WHERE line_id='"+discount+"';",ok=False)
     sql("DELETE FROM hospitalflow.portal_payments WHERE id='"+receipt+"';",ok=False)
     print('PASS: scoped invoice totals/discounts, concurrent idempotent TEST settlement, historical medicine price snapshots, same-date tariff revisions, year/leap-day holiday policies, patient isolation and Admin-only releases.')
+    # Inclusive GST: the total is fixed; discounts reduce the inclusive taxable amount.
+    charge={'patientId':pid,'category':'Bed','description':'Synthetic inclusive GST example','amount':100}
+    for reader in [doctor,nurse,patient,pharmacy]:command(reader,'charge',charge,403)
+    inclusive_bill=command(reception,'charge',charge)['reference']
+    def invoice(client,reference):return next(x for x in client.request('/api/finance')['data']['invoices'] if x['id']==reference)
+    for reader in [admin,reception,doctor,nurse,patient]:
+        row=invoice(reader,inclusive_bill)
+        assert (row['base'],row['gst'],row['grand_total'])==(84.75,15.25,100),row
+        doc=reader.request('/api/documents/invoice/'+inclusive_bill+'?mode=pdf')
+        assert 'document-logo' in doc['html'] and '<svg' in doc['html'] and 'Print / export time' in doc['html'],doc
+    pharmacy.request('/api/documents/invoice/'+inclusive_bill+'?mode=pdf',expected=403)
+    assert inclusive_bill not in [x['id'] for x in pharmacy.request('/api/finance')['data']['invoices']]
+    command(reception,'discount',{'invoiceId':inclusive_bill,'amount':10,'reason':'Synthetic inclusive discount'})
+    row=invoice(patient,inclusive_bill);assert (row['base'],row['gst'],row['grand_total'])==(76.27,13.73,90),row
+    # Captured tax rates do not change when Admin creates a new settings version.
+    command(reception,'tax-settings',{'bedRate':20,'medicineRate':7,'otherRate':0},403)
+    command(admin,'tax-settings',{'bedRate':20,'medicineRate':7,'otherRate':0})
+    assert invoice(patient,inclusive_bill)['gst']==13.73
+    next_bill=command(reception,'charge',charge)['reference'];row=invoice(patient,next_bill)
+    assert row['base']==83.33 and row['gst']==16.67 and row['grand_total']==100,row
+    command(admin,'tax-settings',{'bedRate':18,'medicineRate':7,'otherRate':0})
+    # A medicine sale also extracts GST from its selling price, without increasing the bill.
+    command(pharmacy,'medicine-price',{'medicineId':med['id'],'price':100,'reason':'Synthetic inclusive medicine example'})
+    rx=doctor.action('prescription',{'patientId':pid,'medicineId':med['id'],'quantity':1,'instructions':'Synthetic tax fixture'})['reference']
+    pharmacy.action('dispense',{'id':rx})
+    medicine_bill=next(m['invoice'] for m in patient.request('/api/finance')['data']['medicines'] if m['prescription_id']==rx)
+    row=invoice(pharmacy,medicine_bill);assert (row['base'],row['gst'],row['grand_total'])==(93.46,6.54,100),row
+    for client in [doctor,nurse]:
+        client.request('/api/care/flow/extra-charge',{'patientId':pid,'category':'Other service','description':'Forbidden edit','amount':1},403)
+    print('PASS: inclusive 18% bed and 7% medicine GST, discount rounding, immutable rate snapshots, Reception editing, clinical read-only receipts, pharmacy-only billing and branded PDF/print payloads.')

@@ -106,7 +106,7 @@ const calendarHtml=vm.runInContext('annualCalendarPage()',ctx);assert.equal((cal
 accessCtx.me={role:'Doctor',permissions:['Doctor']};assert.equal(vm.runInContext("pageAccess('versions')",accessCtx),false);accessCtx.me={role:'Admin'};assert.equal(vm.runInContext("pageAccess('versions')",accessCtx),true);
 console.log('PASS: transparent patient/clinical invoice controls, discounts, escaped medicine names, leap-year calendar and Admin-only version navigation.');
 
-vm.runInContext("me={role:'Doctor',permissions:['Doctor']}",ctx);assert.match(vm.runInContext("financialPanel('p')",ctx),/Apply discount/);
+vm.runInContext("me={role:'Doctor',permissions:['Doctor']}",ctx);assert.doesNotMatch(vm.runInContext("financialPanel('p')",ctx),/Apply discount/);
 vm.runInContext("me={role:'User',permissions:['Pharmacist']};state.finance.data.invoices[0].gross=200",ctx);assert.match(vm.runInContext("financialPanel('p')",ctx),/Apply discount/);
 vm.runInContext("me={role:'User',patientId:'p',permissions:[]}",ctx);assert.match(vm.runInContext("financialPanel('p')",ctx),/Pay total outstanding/);assert.match(vm.runInContext("patientChargeCell('p')",ctx),/Due/);
 console.log('PASS: patient row balances, scoped Doctor/Pharmacy discount controls and total payment action.');

@@ -5,14 +5,14 @@ Generated from the installed PostgreSQL metadata on `localhost:5432/hospitalflow
 | Object type | Count |
 | --- | --- |
 | EVENT TRIGGER | 2 |
-| FUNCTION | 92 |
-| INDEX | 248 |
+| FUNCTION | 101 |
+| INDEX | 250 |
 | MATERIALIZED VIEW | 1 |
-| POLICY | 84 |
+| POLICY | 86 |
 | PROCEDURE | 23 |
 | SEQUENCE | 7 |
-| TABLE | 106 |
-| TRIGGER | 237 |
+| TABLE | 108 |
+| TRIGGER | 245 |
 | TYPE | 2 |
 | VIEW | 14 |
 
@@ -291,6 +291,31 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | amount | numeric | NO |  |
 | created_at | timestamp with time zone | NO | now() |
 | hospital_id | text | NO | hf_security.current_hospital() |
+
+
+### hospitalflow.billing_tax_settings
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| id | uuid | NO | gen_random_uuid() |
+| hospital_id | text | NO | hf_security.current_hospital() |
+| bed_rate | numeric | NO | 18 |
+| medicine_rate | numeric | NO | 7 |
+| other_rate | numeric | NO | 0 |
+| configured_by | text | YES |  |
+| created_at | timestamp with time zone | NO | clock_timestamp() |
+
+
+### hospitalflow.billing_tax_snapshots
+
+| Column | Type | Nullable | Default |
+| --- | --- | --- | --- |
+| line_id | text | NO |  |
+| hospital_id | text | NO | hf_security.current_hospital() |
+| setting_id | uuid | NO |  |
+| category | text | NO |  |
+| rate | numeric | NO |  |
+| captured_at | timestamp with time zone | NO | now() |
 
 
 ### hospitalflow.bills
@@ -1405,6 +1430,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_api | accrue_stay_charges | FUNCTION | p_admission text, p_strict boolean | True |
 | hf_api | admit_patient | PROCEDURE | INOUT p_id text, IN p_patient text, IN p_bed text, IN p_reason text | False |
 | hf_api | approve_purchase_order | PROCEDURE | IN p_id uuid | False |
+| hf_api | billing_receipt | FUNCTION | p_bill text | True |
 | hf_api | book_appointment | PROCEDURE | INOUT p_id text, IN p_patient text, IN p_doctor text, IN p_at timestamp with time zone, IN p_type text | False |
 | hf_api | booking_actor | FUNCTION |  | True |
 | hf_api | booking_command | FUNCTION | p_action text, p jsonb, p_test boolean | True |
@@ -1431,6 +1457,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_api | hospital_leave_calendar | FUNCTION |  | True |
 | hf_api | hospital_today | FUNCTION |  | False |
 | hf_api | invalidate_care_approval | FUNCTION | p_patient text, p_reason text | True |
+| hf_api | invoice_tax_detail | FUNCTION | p_bill text | True |
 | hf_api | manage_staff_attendance | FUNCTION | p jsonb | True |
 | hf_api | medication_care | FUNCTION |  | True |
 | hf_api | new_id | FUNCTION | p_prefix text | False |
@@ -1451,6 +1478,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_api | save_patient | PROCEDURE | INOUT p_id text, IN p_name text, IN p_dob date, IN p_sex text, IN p_phone text | False |
 | hf_api | select_booking_hospital | FUNCTION | p_hospital text | True |
 | hf_api | set_appointment_status | PROCEDURE | IN p_id text, IN p_status text | False |
+| hf_api | snapshot_invoice_tax | FUNCTION | p_bill text | True |
 | hf_api | transfer_patient | PROCEDURE | IN p_id text, IN p_bed text, IN p_reason text | False |
 | hf_api | year_calendar | FUNCTION | p_year integer | True |
 | hf_ops | capture_ddl | FUNCTION |  | True |
@@ -1468,14 +1496,19 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_security | audit | FUNCTION | p_action text, p_reference text | False |
 | hf_security | auto_hospital_member | FUNCTION |  | True |
 | hf_security | bill_completed_care_lab | FUNCTION |  | True |
+| hf_security | billing_pharmacy_only | FUNCTION |  | False |
+| hf_security | billing_staff | FUNCTION |  | True |
 | hf_security | can_access_encounter | FUNCTION | p_encounter uuid | True |
 | hf_security | can_access_patient | FUNCTION | p_patient text | True |
 | hf_security | can_read_care | FUNCTION | p_patient text | True |
+| hf_security | can_read_invoice | FUNCTION | p_bill text | True |
 | hf_security | capture_care_activity | FUNCTION |  | True |
+| hf_security | capture_invoice_tax | FUNCTION |  | True |
 | hf_security | care_role | FUNCTION | p_roles text[] | True |
 | hf_security | current_hospital | FUNCTION |  | False |
 | hf_security | directory_providers | FUNCTION |  | True |
 | hf_security | enrolled_patient | FUNCTION | p_patient text | True |
+| hf_security | guard_billing_discount | FUNCTION |  | True |
 | hf_security | guard_care_discharge | FUNCTION |  | True |
 | hf_security | guard_clinical_author | FUNCTION |  | True |
 | hf_security | guard_doctor_visit | FUNCTION |  | True |
@@ -1483,6 +1516,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hf_security | guard_hospital_row | FUNCTION |  | True |
 | hf_security | guard_patient_account | FUNCTION |  | True |
 | hf_security | is_visit_doctor | FUNCTION | p_doctor text | True |
+| hf_security | medicine_invoice | FUNCTION | p_bill text | True |
 | hf_security | own_patient | FUNCTION | p_patient text | False |
 | hf_security | own_related | FUNCTION | p_kind text, p_id text | True |
 | hf_security | patient_email_guard | FUNCTION |  | True |
@@ -1533,6 +1567,8 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | POLICY | bed_assignments.hospital_fence |
 | hospitalflow | POLICY | beds.hospital_fence |
 | hospitalflow | POLICY | bill_lines.hospital_fence |
+| hospitalflow | POLICY | billing_tax_settings.hospital_read |
+| hospitalflow | POLICY | billing_tax_snapshots.hospital_read |
 | hospitalflow | POLICY | bills.hospital_fence |
 | hospitalflow | POLICY | booking_events.booking_event_fence |
 | hospitalflow | POLICY | booking_settings.hospital_fence |
@@ -1675,10 +1711,17 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | beds.bed_consistency |
 | hospitalflow | beds.record_history |
 | hospitalflow | beds.z_hospital_guard |
+| hospitalflow | bill_lines.capture_inclusive_tax |
 | hospitalflow | bill_lines.immutable_ledger |
 | hospitalflow | bill_lines.line_balance |
 | hospitalflow | bill_lines.record_history |
 | hospitalflow | bill_lines.z_hospital_guard |
+| hospitalflow | billing_tax_settings.immutable_ledger |
+| hospitalflow | billing_tax_settings.record_history |
+| hospitalflow | billing_tax_settings.z_hospital_guard |
+| hospitalflow | billing_tax_snapshots.immutable_ledger |
+| hospitalflow | billing_tax_snapshots.record_history |
+| hospitalflow | billing_tax_snapshots.z_hospital_guard |
 | hospitalflow | bills.record_history |
 | hospitalflow | bills.z_hospital_guard |
 | hospitalflow | booking_events.immutable_ledger |
@@ -1736,6 +1779,7 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | idempotency_keys.z_hospital_guard |
 | hospitalflow | integration_outbox.immutable_ledger |
 | hospitalflow | integration_outbox.z_hospital_guard |
+| hospitalflow | invoice_discounts.billing_discount_editor |
 | hospitalflow | invoice_discounts.immutable_ledger |
 | hospitalflow | invoice_discounts.record_history |
 | hospitalflow | invoice_discounts.z_hospital_guard |
@@ -1967,7 +2011,19 @@ The `hospitalflow` schema contains business/security data. `hf_ops` contains sch
 | hospitalflow | bill_lines | bill_lines_bill_id_fkey | FOREIGN KEY (bill_id) REFERENCES hospitalflow.bills(id) |
 | hospitalflow | bill_lines | bill_lines_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | bill_lines | bill_lines_pkey | PRIMARY KEY (id) |
+| hospitalflow | bill_lines | capture_inclusive_tax | TRIGGER DEFERRABLE INITIALLY DEFERRED |
 | hospitalflow | bill_lines | line_balance | TRIGGER DEFERRABLE INITIALLY DEFERRED |
+| hospitalflow | billing_tax_settings | billing_tax_settings_bed_rate_check | CHECK (((bed_rate >= (0)::numeric) AND (bed_rate <= (100)::numeric))) |
+| hospitalflow | billing_tax_settings | billing_tax_settings_configured_by_fkey | FOREIGN KEY (configured_by) REFERENCES hospitalflow.users(id) |
+| hospitalflow | billing_tax_settings | billing_tax_settings_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | billing_tax_settings | billing_tax_settings_medicine_rate_check | CHECK (((medicine_rate >= (0)::numeric) AND (medicine_rate <= (100)::numeric))) |
+| hospitalflow | billing_tax_settings | billing_tax_settings_other_rate_check | CHECK (((other_rate >= (0)::numeric) AND (other_rate <= (100)::numeric))) |
+| hospitalflow | billing_tax_settings | billing_tax_settings_pkey | PRIMARY KEY (id) |
+| hospitalflow | billing_tax_snapshots | billing_tax_snapshots_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
+| hospitalflow | billing_tax_snapshots | billing_tax_snapshots_line_id_fkey | FOREIGN KEY (line_id) REFERENCES hospitalflow.bill_lines(id) |
+| hospitalflow | billing_tax_snapshots | billing_tax_snapshots_pkey | PRIMARY KEY (line_id) |
+| hospitalflow | billing_tax_snapshots | billing_tax_snapshots_rate_check | CHECK (((rate >= (0)::numeric) AND (rate <= (100)::numeric))) |
+| hospitalflow | billing_tax_snapshots | billing_tax_snapshots_setting_id_fkey | FOREIGN KEY (setting_id) REFERENCES hospitalflow.billing_tax_settings(id) |
 | hospitalflow | bills | bills_hospital_id_fkey | FOREIGN KEY (hospital_id) REFERENCES hospitalflow.hospitals(id) |
 | hospitalflow | bills | bills_patient_id_fkey | FOREIGN KEY (patient_id) REFERENCES hospitalflow.patients(id) |
 | hospitalflow | bills | bills_pkey | PRIMARY KEY (id) |

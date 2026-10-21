@@ -43,9 +43,11 @@ app.MapGet("/api/state",async(HttpContext ctx)=>{
     var s=await store.Current();var full=Access.Full(ctx.User.FindFirstValue(ClaimTypes.Role));var grants=await store.Permissions(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     bool Has(params string[] permissions)=>full||permissions.Any(grants.Contains);
     var operational=full||grants.Length>0;
+    var visibleBills=new HashSet<string>();
+    if(Has("Reception","Billing")){await using var c=await store.Open();await using var cmd=new Npgsql.NpgsqlCommand("SELECT id FROM hospitalflow.bills WHERE hf_security.can_read_invoice(id)",c);await using var reader=await cmd.ExecuteReaderAsync();while(await reader.ReadAsync())visibleBills.Add(reader.GetString(0));}
     var patients=s.Patients.Where(_=>operational).Select(p=>new{p.Id,p.Name,p.Dob,p.Sex,Phone=Has("Reception","Doctor","Nurse")?p.Phone:"Restricted",p.Email,p.RegistrationId,p.Address,p.EmergencyContact,p.Created});
     return Results.Ok(new{patients,doctors=operational?s.Doctors:[],appointments=Has("Reception","Doctor","Nurse")?s.Appointments:[],beds=Has("Nurse")?s.Beds:[],admissions=Has("Nurse","Doctor")?s.Admissions:[],
-        medicines=Has("Pharmacist","Doctor")?s.Medicines:[],prescriptions=Has("Pharmacist","Doctor")?s.Prescriptions:[],bills=Has("Billing")?s.Bills:[],notes=Has("Doctor","Nurse")?s.Notes:[],
+        medicines=Has("Pharmacist","Doctor")?s.Medicines:[],prescriptions=Has("Pharmacist","Doctor")?s.Prescriptions:[],bills=s.Bills.Where(b=>visibleBills.Contains(b.Id)).ToList(),notes=Has("Doctor","Nurse")?s.Notes:[],
         audit=full?s.Audit:s.Audit.Where(x=>x.ActorId==ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)).ToList(),
         users=full?await store.Accounts():[],movements=Has("Pharmacist")?s.Movements:[],serverTime=DateTimeOffset.UtcNow});
 }).RequireAuthorization();
@@ -66,7 +68,7 @@ app.MapPost("/api/activity",async(JsonElement body,HttpContext ctx)=>{
             await store.Log(Context(ctx).Event("record-view",kind+":"+reference));return Results.Ok();
         }
         if(kind=="patient"&&!Access.Full(ctx.User.FindFirstValue(ClaimTypes.Role))&&(await store.Permissions(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!)).Length==0)return Results.Forbid();
-        if(kind=="invoice"&&!Access.Full(ctx.User.FindFirstValue(ClaimTypes.Role))&&!(await store.Permissions(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!)).Contains("Billing"))return Results.Forbid();
+        if(kind=="invoice"){await using var c=await store.Open();await using var cmd=new Npgsql.NpgsqlCommand("SELECT hf_security.can_read_invoice($1)",c);cmd.Parameters.AddWithValue(reference);if(!(bool)(await cmd.ExecuteScalarAsync())!)return Results.Forbid();}
         if(!await store.RecordExists(kind,reference))return Results.NotFound();
         await store.Log(Context(ctx).Event("record-view",kind+":"+reference));return Results.Ok();
     }
@@ -76,7 +78,7 @@ app.MapPost("/api/activity",async(JsonElement body,HttpContext ctx)=>{
     }
     var allowed=new[]{"dashboard","patients","appointments","doctors","beds","admissions","clinical","pharmacy","billing","reports","alerts","admin","operations","people","bills","profile","tasks","nursing","hospitals","referrals","hospital-history","hospital-access","attendance","hospital-leave"};
     if(reference==null||!allowed.Contains(reference))return Results.BadRequest();
-    if((reference is "billing" or "bills")&&!Access.Full(ctx.User.FindFirstValue(ClaimTypes.Role))&&!(await store.Permissions(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!)).Contains("Billing"))return Results.Forbid();
+    if((reference is "billing" or "bills")&&!Access.Full(ctx.User.FindFirstValue(ClaimTypes.Role))&&!(await store.Permissions(ctx.User.FindFirstValue(ClaimTypes.NameIdentifier)!)).Any(x=>x is "Reception" or "Billing"))return Results.Forbid();
     await store.Log(Context(ctx).Event(action,reference));return Results.Ok();
 }).RequireAuthorization();
 app.MapPost("/api/account/password",async(JsonElement body,HttpContext ctx)=>{
@@ -92,7 +94,7 @@ app.MapPost("/api/actions/{action}",async(string action,JsonElement input,HttpCo
         "appointment"=>new[]{"Reception"},"appointment-status"=>new[]{"Reception","Doctor"},
         "admit" or "transfer" or "discharge" or "bed-status"=>new[]{"Nurse"},
         "medicine" or "stock" or "dispense"=>new[]{"Pharmacist"},
-        "bill" or "payment" or "adjustment"=>new[]{"Billing"},"prescription"=>new[]{"Doctor"},"note"=>new[]{"Doctor","Nurse"},
+        "bill" or "payment" or "adjustment"=>new[]{"Reception"},"prescription"=>new[]{"Doctor"},"note"=>new[]{"Doctor","Nurse"},
         "doctor" or "bed" or "user" or "user-status"=>Array.Empty<string>(),_=>null
     };
     if(permissions==null&&EnterpriseOperations.Commands.Contains(action))permissions=Access.ClinicalActions.Contains(action)?(action=="cancel-prescription"?new[]{"Doctor"}:new[]{"Doctor","Nurse"}):[];

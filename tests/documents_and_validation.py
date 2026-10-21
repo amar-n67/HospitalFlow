@@ -14,7 +14,7 @@ def check_documents_and_validation(base,sql,Client,password):
     for kind,key in [('appointment','appointments'),('prescription','prescriptions'),('invoice','bills'),('admission','admissions')]:
         assert snapshot[key],kind+' fixture missing'
         record=snapshot[key][0]
-        for mode in ['print','download']:
+        for mode in ['print','download','pdf']:
             doc=admin.request('/api/documents/'+kind+'/'+record['id']+'?mode='+mode)
             assert doc['reference']==record['id'] and '<article' in doc['html'] and 'Patient ID' in doc['html']
             assert 'password' not in doc['html'].lower()
@@ -23,6 +23,7 @@ def check_documents_and_validation(base,sql,Client,password):
         if other:patient.request('/api/documents/'+kind+'/'+other['id']+'?mode=print',expected=404)
         for item in own[key]:
             assert patient.request('/api/documents/'+kind+'/'+item['id']+'?mode=download')['reference']==item['id']
+    # This seeded invoice is outside the Nurse's assigned care scope.
     nurse.request('/api/documents/invoice/'+snapshot['bills'][0]['id']+'?mode=download',expected=403)
     billing=Client(base);billing.login('billing')
     masked=billing.request('/api/documents/invoice/'+snapshot['bills'][0]['id']+'?mode=download')

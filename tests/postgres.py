@@ -101,7 +101,7 @@ if __name__=='__main__':
             c.request('/api/activity',{'event':'page-view','reference':'beds'})
             c.request('/api/activity',{'event':'report-export','reference':'beds'})
             c.request('/api/activity',{'event':'record-view','entity':'patient','reference':'HF-1001'})
-            unauthorized=Client(base);unauthorized.login('reception');unauthorized.request('/api/activity',{'event':'record-view','entity':'invoice','reference':'INV-1002'},403)
+            unauthorized=Client(base);unauthorized.login('reception');unauthorized.request('/api/activity',{'event':'record-view','entity':'invoice','reference':'INV-1002'},200)
             c.request('/api/notifications')
             assert int(sql("SELECT count(*) FROM hospitalflow.notifications WHERE resolved_at IS NULL;"))>0
             log=c.request('/api/activity?limit=500')

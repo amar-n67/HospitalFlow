@@ -3,6 +3,7 @@ using System.Text.Json;
 using Npgsql;
 static class EnterpriseFinanceEndpoints {
  public static void Map(WebApplication app,Store store){
+  app.MapGet("/api/documents/branding",async()=>Results.Ok(await store.BookingQuery("SELECT jsonb_build_object('hospital',name,'address',address,'city',city,'generatedAt',now(),'application','HospitalFlow','logoText','✚ HospitalFlow')::text FROM hospitalflow.hospitals WHERE id=hf_security.current_hospital()"))).RequireAuthorization();
   app.MapGet("/api/finance",async()=>{await store.BookingQuery("SELECT '{}'::text FROM (SELECT hf_api.refresh_finance_charges()) refreshed");return Results.Ok(new{data=await store.BookingQuery("SELECT hf_api.finance_state()::text"),paymentMode=store.TestPayments?"Test":"Disabled"});}).RequireAuthorization();
   app.MapGet("/api/calendar/{year:int}",async(int year)=>Results.Ok(await store.BookingQuery("SELECT hf_api.year_calendar($1)::text",year))).RequireAuthorization();
   app.MapGet("/api/admin/versions",async(HttpContext ctx)=>{

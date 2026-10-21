@@ -34,9 +34,9 @@ def check_database(sql,client):
     assert sql('SELECT count(*) FROM hospitalflow.prescription_dispensations WHERE prescription_id='+quoted(rx)+';')=='1'
     service=command('service',{'code':'TEST-CONSULT','name':'Test consultation','department':'General Medicine','category':'Consultation'})
     price=command('service-price',{'serviceId':service,'amount':100})
-    bill=command('bill',{'patientId':'HF-1006','description':'Test service','amount':40},role='Billing')
-    charge=command('service-charge',{'id':bill,'serviceId':service,'quantity':1},role='Billing')
-    payment=command('payment',{'id':bill,'amount':20,'method':'Cash'},role='Billing')
+    bill=command('bill',{'patientId':'HF-1006','description':'Test service','amount':40},role='Reception')
+    charge=command('service-charge',{'id':bill,'serviceId':service,'quantity':1},role='Reception')
+    payment=command('payment',{'id':bill,'amount':20,'method':'Cash'},role='Reception')
     command('reverse-payment',{'id':payment,'amount':5,'reason':'Test partial reversal'})
     command('reverse-payment',{'id':payment,'amount':16,'reason':'Must reject over-reversal'},ok=False)
     assert sql('SELECT paid FROM hospitalflow.invoice_balances WHERE id='+quoted(bill)+';')=='15.00'

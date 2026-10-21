@@ -50,8 +50,8 @@ def check_accounts(base,sql,folder,Client,password):
     admin.request('/api/admin/account',manage(permissions=['Reception']))
     user.request('/api/state',expected=401)
     user.request('/api/login',{'email':email,'password':password})
-    assert user.request('/api/state')['patients'] and user.request('/api/state')['bills']==[]
-    user.action('bill',{'patientId':'HF-1001','description':'Forbidden','amount':1},403)
+    assert user.request('/api/state')['patients'] and user.request('/api/state')['bills']
+    user.action('bill',{'patientId':'HF-1001','description':'Reception authorized charge','amount':1})
     # Unknown and existing addresses receive the same response; no token is disclosed.
     assert anon.request('/api/forgot-password',{'email':email})==anon.request('/api/forgot-password',{'email':'unknown@example.test'})
     reset=link('reset');replacement='Replacement-Strong-Cedar-2026!'

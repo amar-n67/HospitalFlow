@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "releases": [
     {
       "version": "1.0.1",
@@ -12,6 +12,12 @@
       "releasedAt": "2026-10-21T14:24:08.277400+00:00",
       "sourceParent": "acb74d85ab8f18eabe06b730a528f439b9d95056",
       "notes": "Updated: docs/BILLING_CALENDAR_VERSIONING.md, docs/QUICK_START.md, hospitalflow, scripts/dev_server.py, tests/dev_server.py, tests/enterprise_finance.py, tests/frontend_persistence.cjs, tests/postgres.py, wwwroot/js/core/app.js"
+    },
+    {
+      "version": "1.0.3",
+      "releasedAt": "2026-10-21T14:51:17.571689+00:00",
+      "sourceParent": "9a817651a564a15fc1924c01b237f87bd53ebd98",
+      "notes": "Updated: Controllers/ApplicationEndpoints.cs, Controllers/CareFlowEndpoints.cs, Controllers/EnterpriseFinanceEndpoints.cs, Controllers/RecordDocumentEndpoints.cs, Database/Migrations/028_inclusive_billing_and_documents.sql, Database/hospitalflow_schema.sql, Services/Documents/Store.Documents.cs, docs/DATABASE_OBJECTS.md, docs/PATIENT_BILLING.md, tests/accounts.py, tests/documents_and_validation.py, tests/enterprise_database.py, tests/enterprise_finance.py, tests/frontend_workspaces.cjs, tests/postgres.py, wwwroot/js/core/app.js, wwwroot/js/features/care-flow.js, wwwroot/js/features/documents.js, wwwroot/js/features/enterprise.js"
     }
   ]
 }
