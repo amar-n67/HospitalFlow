@@ -49,7 +49,7 @@ For another checkout, enable the hook using:
 python3 scripts/install_git_hooks.py
 ```
 
-The installer preserves any pre-existing custom hook configuration instead of overwriting it. Enabling the hook does not create a commit or deployment. After a commit, rebuild and restart/deploy the application so its running version and database release history reflect the new build. Uncommitted source edits do not falsely claim a new release version.
+The installer preserves any pre-existing custom hook configuration instead of overwriting it. Enabling the hook does not create a commit or deployment. When started with `./hospitalflow run`, the local commit supervisor automatically rebuilds and restarts after a new Git commit; the version label refreshes from the server within 15 seconds. A failed build preserves the old server. For plain `dotnet run`, debugger sessions or remote production, rebuild/restart or deploy explicitly. Uncommitted source edits do not falsely claim a new release version.
 
 ## Validation
 

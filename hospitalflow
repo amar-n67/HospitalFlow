@@ -18,11 +18,11 @@ elif args.command in ('run','watch'):
  if not (ROOT/'appsettings.Local.json').exists() and not os.environ.get('ConnectionStrings__HospitalFlow'):
   raise SystemExit('Configure appsettings.Local.json or ConnectionStrings__HospitalFlow first; see docs/QUICK_START.md.')
  print('HospitalFlow: http://localhost:5136 — stop with Ctrl+C',flush=True)
- run(['dotnet','run','--project','HospitalFlow.csproj','--launch-profile','http'] if args.command=='run' else ['dotnet','watch','--project','HospitalFlow.csproj','run','--launch-profile','http'])
+ run([python,'scripts/dev_server.py'] if args.command=='run' else ['dotnet','watch','--project','HospitalFlow.csproj','run','--launch-profile','http'])
 elif args.command=='build':run(['dotnet','build','HospitalFlow.csproj'])
 elif args.command=='test':
  run(['dotnet','build','HospitalFlow.csproj'])
- run(['node','tests/frontend_workspaces.cjs']);run(['node','tests/frontend_persistence.cjs']);run([python,'tests/version_release.py']);run([python,'-u','tests/postgres.py'])
+ run(['node','tests/frontend_workspaces.cjs']);run(['node','tests/frontend_persistence.cjs']);run([python,'tests/version_release.py']);run([python,'tests/dev_server.py']);run([python,'-u','tests/postgres.py'])
 elif args.command=='status':run([python,'scripts/local_database.py','status'])
 elif args.command=='verify':run([python,'scripts/verify_database.py'])
 elif args.command=='backup':run([python,'scripts/backup_database.py'])

@@ -35,7 +35,7 @@ def check_enterprise_finance(base,sql,Client):
     command(patient,'portal-pay',{**pay,'invoiceId':other['id'],'amount':1},403)
     assert all(x['patient_id']==pid for x in patient.request('/api/finance')['data']['invoices'])
     patient.request('/api/calendar/2026',expected=403);patient.request('/api/admin/versions',expected=403);doctor.request('/api/admin/versions',expected=403)
-    versions=admin.request('/api/admin/versions');assert versions['current']=='1.0.0' and versions['releases']
+    versions=admin.request('/api/admin/versions');assert versions['current']==__import__('pathlib').Path(__file__).resolve().parents[1].joinpath('VERSION').read_text().strip() and versions['releases']
     build=Client(base).request('/api/health')
     assert build['version']==versions['current'] and build['commit'] and build['workingTree'] in ('modified','clean','unknown')
     for client in [admin,doctor,nurse,patient]:

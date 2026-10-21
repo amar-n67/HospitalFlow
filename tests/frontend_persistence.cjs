@@ -46,3 +46,7 @@ assert.match(index,/id="login-build" class="app-build login-build"/);
 assert.doesNotMatch(index,/class="app-footer"/);
 versionCtx.me={version:'2.0.0',commit:null,workingTree:'unknown'};vm.runInContext('updateVersionBadge()',versionCtx);assert.equal(versionBadge.textContent,'Version 2.0.0');assert.doesNotMatch(versionBadge.textContent,/Commit|Uncommitted/);
 console.log('PASS: version-only labels directly below the application logos.');
+
+versionCtx.document.hidden=false;versionCtx.api=async url=>{assert.equal(url,'/api/health');return {version:'1.0.2'};};
+vm.runInContext(functions.find(line=>line.startsWith('async function refreshRunningVersion(')),versionCtx);
+vm.runInContext('refreshRunningVersion()',versionCtx).then(()=>{assert.equal(versionBadge.textContent,'Version 1.0.2');console.log('PASS: version polling picks up a restarted build without reloading page content.');}).catch(error=>{console.error(error);process.exitCode=1;});

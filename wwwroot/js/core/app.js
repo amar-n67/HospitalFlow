@@ -140,3 +140,8 @@ let themeSave=Promise.resolve();document.addEventListener('hospitalflow:theme-ch
 
 // Public build identity also keeps the footer available on login and recovery pages.
 api('/api/health').then(build=>updateVersionBadge(build)).catch(()=>{});
+
+// Read the deployed build identity after a commit-triggered restart without discarding forms.
+async function refreshRunningVersion(){if(document.hidden)return;try{const build=await api('/api/health');updateVersionBadge(build);}catch{}}
+setInterval(refreshRunningVersion,15000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshRunningVersion();});

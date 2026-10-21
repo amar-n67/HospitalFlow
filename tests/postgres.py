@@ -51,7 +51,7 @@ if __name__=='__main__':
             for asset in assets:
                 with urllib.request.urlopen(base+asset) as response:
                     assert response.status==200 and response.read(),asset
-                    expected='javascript' if asset.endswith('.js') else 'text/css'
+                    expected='javascript' if asset.split('?',1)[0].endswith('.js') else 'text/css'
                     assert expected in response.headers.get('Content-Type',''),asset
             print('PASS: organized JavaScript/CSS assets are served by the running application.')
             if '--care-only' in sys.argv:
