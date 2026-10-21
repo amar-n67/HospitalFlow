@@ -26,7 +26,7 @@ try:
    restored('CREATE ROLE hospitalflow_app NOLOGIN;CREATE ROLE hospitalflow_job_runner NOLOGIN;CREATE ROLE hospitalflow_report_reader NOLOGIN;')
    result=subprocess.run([tool('pg_restore'),'-h','127.0.0.1','-p',str(port),'-U','restore_owner','-d','postgres','--no-owner','--no-acl','--exit-on-error',str(path)],env={**os.environ,'PGPASSWORD':owner_password},capture_output=True)
    if result.returncode:raise RuntimeError('Backup restore failed; source database is unchanged.')
-   restored((ROOT/'HospitalFlow/Database/grant_operations.sql').read_text()+'\n'+(ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text())
+   restored((ROOT/'Database/grant_operations.sql').read_text()+'\n'+(ROOT/'Database/grant_runtime.sql').read_text())
    report['checks']=json.loads(restored("SELECT json_agg(c) FROM hf_ops.validate_database()c;"))
    failures=restored("SELECT count(*) FROM hf_ops.validate_database() WHERE severity='Error' AND violations>0;")
    if failures!='0':raise RuntimeError('Restored database has integrity/security errors.')

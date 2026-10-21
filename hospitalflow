@@ -1,0 +1,31 @@
+#!/usr/bin/env python3
+"""HospitalFlow command entry point. Safe to invoke from any working directory."""
+import argparse,os,pathlib,subprocess,sys
+ROOT=pathlib.Path(__file__).resolve().parent
+parser=argparse.ArgumentParser(description='HospitalFlow local development commands (HTTP port 5136).')
+parser.add_argument('command',nargs='?',default='help',choices=['help','run','watch','build','test','status','verify','backup','migrate','version'])
+args=parser.parse_args()
+def run(command):
+ try:subprocess.run(command,cwd=ROOT,check=True)
+ except KeyboardInterrupt:raise SystemExit(130)
+ except FileNotFoundError as error:raise SystemExit('Required tool is not installed: '+str(error.filename))
+ except subprocess.CalledProcessError as error:raise SystemExit(error.returncode)
+python=sys.executable
+if args.command=='help':
+ parser.print_help();print('\nQuick start: ./hospitalflow run\nOr: dotnet run --launch-profile http\nStop: Ctrl+C (the shared PostgreSQL service is left running).')
+elif args.command in ('run','watch'):
+ if (ROOT/'.local/database.json').exists():run([python,'scripts/local_database.py','status'])
+ if not (ROOT/'appsettings.Local.json').exists() and not os.environ.get('ConnectionStrings__HospitalFlow'):
+  raise SystemExit('Configure appsettings.Local.json or ConnectionStrings__HospitalFlow first; see docs/QUICK_START.md.')
+ print('HospitalFlow: http://localhost:5136 — stop with Ctrl+C',flush=True)
+ run(['dotnet','run','--project','HospitalFlow.csproj','--launch-profile','http'] if args.command=='run' else ['dotnet','watch','--project','HospitalFlow.csproj','run','--launch-profile','http'])
+elif args.command=='build':run(['dotnet','build','HospitalFlow.csproj'])
+elif args.command=='test':
+ run(['dotnet','build','HospitalFlow.csproj'])
+ run(['node','tests/frontend_workspaces.cjs']);run(['node','tests/frontend_persistence.cjs']);run([python,'tests/version_release.py']);run([python,'-u','tests/postgres.py'])
+elif args.command=='status':run([python,'scripts/local_database.py','status'])
+elif args.command=='verify':run([python,'scripts/verify_database.py'])
+elif args.command=='backup':run([python,'scripts/backup_database.py'])
+elif args.command=='migrate':
+ run(['dotnet','build','HospitalFlow.csproj']);run([python,'scripts/local_database.py','migrate'])
+elif args.command=='version':print((ROOT/'VERSION').read_text().strip())

@@ -4,6 +4,24 @@
 
 HospitalFlow is an ASP.NET Core 10 application backed exclusively by PostgreSQL. Patients, appointments, wards, beds, admissions, prescriptions, stock movements, invoices, payments, users, sessions, alerts and activity history are stored in relational database tables. There is no JSON-file or whole-document runtime storage fallback.
 
+## Quick start
+
+From the repository root:
+
+```sh
+./hospitalflow run
+```
+
+Or use the standard .NET command:
+
+```sh
+dotnet run --launch-profile http
+```
+
+Open **http://localhost:5136**. Stop with **Ctrl+C**. The shared PostgreSQL server stays running.
+
+The project now follows the reference AmarShowsBook layout: root-level **Controllers, Models, Data, Services, Helpers, Database and wwwroot**. Open `HospitalFlow.sln` in your IDE. See [Quick start and commands](docs/QUICK_START.md) and [Project structure](docs/PROJECT_STRUCTURE.md).
+
 ## Current local installation
 
 The application uses a dedicated database on your existing PostgreSQL 17 server:
@@ -17,13 +35,12 @@ The application uses a dedicated database on your existing PostgreSQL 17 server:
 | Database administrator / migration account | `postgres` |
 | Browser URL | http://localhost:5136 |
 
-Local database credentials are in owner-readable files excluded from Git: `HospitalFlow/appsettings.Local.json` contains the runtime connection, and `.local/database.json` contains local provisioning credentials. Do not commit or share these files. The supplied `postgres` account provisions and migrates the database; the web application uses the separate restricted `hospitalflow_app` account. In pgAdmin refresh **Databases → hospitalflow → Schemas → hospitalflow → Tables**. Inventory is in `medicine_batches`; transaction history is in `stock_movements`.
+Local database credentials are in owner-readable files excluded from Git: `appsettings.Local.json` contains the runtime connection, and `.local/database.json` contains local provisioning credentials. Do not commit or share these files. The supplied `postgres` account provisions and migrates the database; the web application uses the separate restricted `hospitalflow_app` account. In pgAdmin refresh **Databases → hospitalflow → Schemas → hospitalflow → Tables**. Inventory is in `medicine_batches`; transaction history is in `stock_movements`.
 
 Existing local records were imported, preserving user IDs and password hashes. The original JSON file is no longer read or written by the application. A pre-import backup was saved under `.local/legacy-backup-*.json`. The imported dataset includes demonstration records, which the interface identifies. No records were deleted from another database.
 
 ```sh
-python3 scripts/local_database.py start
-dotnet run --project HospitalFlow --launch-profile http
+./hospitalflow run
 ```
 
 Sign in with an existing HospitalFlow account. Database credentials are separate from application sign-in credentials. Use the initials button in the top right to change your application password. Changing it revokes all your current sessions. Administrators can create users, disable accounts, add providers and add beds through Administration.
@@ -50,13 +67,13 @@ Twenty-five checksum-protected migrations define the relational database. See th
 
 See the [enterprise database guide](docs/ENTERPRISE_DATABASE.md) and [installed object catalogue](docs/DATABASE_OBJECTS.md) for the complete inventory and transaction behavior. See the [project structure and data storage guide](docs/PROJECT_STRUCTURE.md) for the feature layout and persistence rules. Main source locations:
 
-- `HospitalFlow/Database/Migrations/`: ordered, embedded SQL migrations.
-- `HospitalFlow/Database/RowMap.cs`: typed relational row mapping and parameterized SQL.
-- `HospitalFlow/Database/DbSecurity.cs`: database-backed authentication sessions and data-protection key repository.
-- `HospitalFlow/Infrastructure/Persistence/Store.cs`: transactional persistence, imports, idempotency, authentication state and alerts.
-- `HospitalFlow/Program.cs`: HTTP security, request auditing and authorized endpoints.
+- `Database/Migrations/`: ordered, embedded SQL migrations.
+- `Data/RowMap.cs`: typed relational row mapping and parameterized SQL.
+- `Data/DbSecurity.cs`: database-backed authentication sessions and data-protection key repository.
+- `Data/Store.cs`: transactional persistence, imports, idempotency, authentication state and alerts.
+- `Program.cs`: HTTP security, request auditing and authorized endpoints.
 - `hf_api.execute` in the SQL migrations: transaction gateway and linked business procedures.
-- `HospitalFlow/Database/grant_runtime.sql`: privileges for the restricted runtime account.
+- `Database/grant_runtime.sql`: privileges for the restricted runtime account.
 
 ## Activity logging
 
@@ -79,9 +96,9 @@ Every mutation requires an `Idempotency-Key` UUID header. The browser generates 
 Requires .NET SDK 10, Python 3 and local PostgreSQL `initdb`, `pg_ctl`, `psql`, `pg_dump` and `pg_restore` tools.
 
 ```sh
-dotnet restore HospitalFlow
-dotnet build HospitalFlow --no-restore
-node --check HospitalFlow/wwwroot/js/core/app.js
+dotnet restore HospitalFlow.csproj
+dotnet build HospitalFlow.csproj --no-restore
+node --check wwwroot/js/core/app.js
 node tests/frontend_workspaces.cjs
 node tests/frontend_persistence.cjs
 python3 tests/postgres.py
@@ -121,3 +138,7 @@ Appointment booking and staff attendance: see [the workflow guide](docs/APPOINTM
 Admin and Doctor are separate roles: see [the role guide](docs/ADMIN_AND_DOCTOR_ROLES.md) for management, clinical authoring and Developer access.
 
 The [Patient care pathway](docs/COMPLETE_CARE_FLOW.md) covers Doctor admission orders, Nurse acceptance/bed assignment, scheduled medication outcomes, daily monitoring, pharmacy requests, versioned ward charges, patient timelines and staged discharge approval.
+
+## Billing, annual holidays and releases
+
+See [Billing, calendar and versioning](docs/BILLING_CALENDAR_VERSIONING.md) for Admin tariffs, medicine prices, patient TEST payments, discounts, yearly hospital holiday policies and automatic Git version increments. The initial version is `1.0.0`; the running version and release history are visible under **Application versions** for Admin/Developer.

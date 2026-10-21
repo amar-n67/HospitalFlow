@@ -1,0 +1,13 @@
+{
+  "version":"0.2.0",
+  "configurations":[
+    {
+      "name":"HospitalFlow (.NET, port 5136)","type":"coreclr","request":"launch",
+      "preLaunchTask":"HospitalFlow: build",
+      "program":"${workspaceFolder}/bin/Debug/net10.0/HospitalFlow.dll",
+      "args":[],"cwd":"${workspaceFolder}","stopAtEntry":false,
+      "env":{"ASPNETCORE_ENVIRONMENT":"Development","Urls":"http://localhost:5136"},
+      "serverReadyAction":{"action":"openExternally","pattern":"\\bNow listening on:\\s+(https?://\\S+)"}
+    }
+  ]
+}

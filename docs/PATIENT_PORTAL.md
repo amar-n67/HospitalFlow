@@ -5,7 +5,7 @@
 The web application's standard port is **5136**. Default configuration and the HTTP launch profile use `http://localhost:5136`; the HTTPS profile and production container use HTTPS on port 5136 with configured certificates. Run one profile at a time. Invitation/recovery links use `Accounts:PublicOrigin`, defaulting locally to `http://localhost:5136`. Production must set the actual public HTTPS origin. Database connections continue to use the existing PostgreSQL service on port 5432.
 
 ```sh
-dotnet run --project HospitalFlow --launch-profile http
+dotnet run --project HospitalFlow.csproj --launch-profile http
 ```
 
 Disposable automated tests explicitly override the web binding with isolated temporary ports; they do not occupy or modify the user's running installation.

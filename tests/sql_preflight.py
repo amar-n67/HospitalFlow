@@ -14,11 +14,11 @@ with tempfile.TemporaryDirectory(prefix='hospitalflow-sql-') as folder:
    if (r.returncode==0)!=ok:raise RuntimeError(r.stderr)
    return r.stdout.strip()
   sql('CREATE SCHEMA hospitalflow;CREATE TABLE hospitalflow.schema_versions(version text PRIMARY KEY,checksum text NOT NULL,applied_at timestamptz NOT NULL DEFAULT now());')
-  for p in sorted((ROOT/'HospitalFlow/Database/Migrations').glob('*.sql')):
+  for p in sorted((ROOT/'Database/Migrations').glob('*.sql')):
    try:sql('BEGIN;'+p.read_text()+'\nCOMMIT;');print('COMPILED',p.name)
    except Exception as e:raise RuntimeError(p.name+': '+str(e))
   sql("CREATE ROLE hospitalflow_app LOGIN;")
-  sql((ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text())
+  sql((ROOT/'Database/grant_runtime.sql').read_text())
   sql("""BEGIN;
   INSERT INTO hospitalflow.users(id,name,email,role,password_hash) SELECT name,name,lower(name)||'@hospitalflow.local',name,'fixture-hash' FROM hospitalflow.roles;
   INSERT INTO hospitalflow.users(id,name,email,role,password_hash) SELECT name,name,lower(name)||'@hospitalflow.local','User','fixture-hash' FROM unnest(ARRAY['Reception','Doctor','Nurse','Pharmacist','Billing']) name ON CONFLICT(id) DO NOTHING;

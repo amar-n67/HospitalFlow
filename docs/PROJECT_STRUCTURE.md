@@ -5,41 +5,63 @@ HospitalFlow uses PostgreSQL as the source of truth for hospital and patient rec
 ## Source layout
 
 ```text
-HospitalFlow/
-  Program.cs                      Application startup, middleware and core routes
-  Core/                           Shared domain records and validation exceptions
-  Features/
-    Accounts/                     Authentication, roles, preferences and onboarding
-    Appointments/                 Booking, payment and staff availability endpoints
-    Clinical/                     Care pathway and medication endpoints
-    Documents/                    Authorized printable/downloadable records
+HospitalFlow/                       Repository / application root
+  HospitalFlow.sln                 Open this solution in an IDE
+  HospitalFlow.csproj              .NET project: run/build from this directory
+  Program.cs                      Startup, security middleware and endpoint registration
+  Controllers/                    HTTP API endpoint groups
+    ApplicationEndpoints.cs       Login, session, state and core commands
+    AccountEndpoints.cs           Signup, verification, recovery and access management
+    BookingEndpoints.cs           Appointment booking and staff leave/attendance
+    CareFlowEndpoints.cs          Clinical care pathway
+    EnterpriseFinanceEndpoints.cs Billing, calendar and version endpoints
+    ...                           People, patients, documents, hospital network
+  Models/                         Domain records and API/data transfer models
+  Data/
+    Store.cs                      PostgreSQL connection, transactions and initialization
+    RowMap.cs                     Parameterized relational mapping
+    DbSecurity.cs                 Database session tickets and key repository
+    Seeding/DemoData.cs            Explicit development-only bootstrap fixtures
+  Services/
+    Accounts/                     Account and onboarding Store sections
+    Appointments/                 Booking queries and commands
+    Background/                   Automatic daily charge worker
+    Documents/                    Printable document data and rendering
     Hospitals/                    Hospital membership, network and referrals
-    Operations/                   Enterprise operations and staff workspaces
-    Patients/                     Patient portal and patient account provisioning
-    People/                       Staff and patient registration/profile management
-  Infrastructure/
-    Messaging/                    Database-queued email and SMS delivery workers
-    Persistence/                  Relational Store, transactions and initialization
-    Seeding/                      Explicit development-only database bootstrap fixtures
+    Messaging/                    Database-queued email and SMS workers
+    Patients/                     Patient portal and first-login Store sections
+    People/                       Registration and profile Store sections
+    Releases/                     Running-build release registration
+    Workforce/                    Profile, work assignments and staff queries
+  Helpers/                        Shared access and account-validation helpers
   Database/
     Migrations/                   Immutable, ordered SQL migrations
-    DbSecurity.cs                 PostgreSQL session tickets and key repository
-    RowMap.cs                     Parameterized relational mapping
     grant_runtime.sql             Restricted application database privileges
     grant_operations.sql          Restricted maintenance database privileges
-    hospitalflow_schema.sql       Generated installer for an empty database
-  Properties/                     Local launch profiles (application port 5136)
+    hospitalflow_schema.sql       Generated empty-database installer
+  Properties/launchSettings.json  HTTP/HTTPS development launch profiles: port 5136
   wwwroot/
-    index.html                    Application shell and ordered script references
-    css/app.css                   Shared styles and themes
+    index.html                    Application shell
+    css/app.css                   Styles and themes
     js/core/                      Startup/API client, dialogs, validation and theme
-    js/features/                  Feature pages and interaction handlers
-scripts/                          Database setup, maintenance, reporting and recovery
-tests/                            Isolated integration and frontend verification
-docs/                             Feature, deployment and database documentation
+    js/features/                  Patient, staff, clinical and billing UI modules
+  scripts/                        Database administration, backup and Git tools
+  tests/                          Isolated integration and frontend checks
+  docs/                           Feature, deployment and architecture guides
+  .vscode/                        Build/run tasks and debugger configuration
+  hospitalflow                    Executable development-command launcher
+  VERSION / release.json          Commit-managed application version and history
+  appsettings*.json               Environment configuration (local settings private)
+  .local/                         Private settings, pickups and backups; excluded from Git
 ```
 
-The C# feature files are compiled automatically by the SDK; moving a file does not change its type or route. Frontend scripts retain their existing load order. `Program.cs` is the entry point. This organization does not change SQL migration resource names or applied checksums.
+This layout follows the reference AmarShowsBook project's root-level `Controllers`, `Models`, `Data`, `Services`, `Helpers`, `Database` and `wwwroot` convention. HospitalFlow uses Minimal API endpoint groups in `Controllers`; it does not require a conversion to MVC or Razor. The current UI remains in `wwwroot`, so no empty `Views` folder or unused view framework is added.
+
+`Program.cs` registers endpoint groups and security middleware. Controllers handle HTTP requests; `Services` contain feature operations implemented as sections of the shared PostgreSQL `Store`. Files named `Store.*.cs` are partial sections of that class, not separate dependency-injected service types. `Data` contains its connection and persistence foundation. `Models` hold data contracts, and `Helpers` hold shared access/validation rules. SQL business commands and constraints remain in `Database/Migrations`.
+
+Routes, frontend asset URLs and SQL checksums are unchanged. The executable project was moved from the former nested `HospitalFlow/` folder to this repository root; supported scripts, tests, Docker build paths and local configuration moved with it. Applied SQL resource names remain `HospitalFlow.Database.Migrations.*`. Local email/SMS pickup directories still resolve to this repository's `.local/` directory.
+
+See [Quick start](QUICK_START.md) for the supported commands. From the repository root, `dotnet run` and `./hospitalflow run` both launch the application. The launcher can also be invoked by absolute path from another directory.
 
 ## What is persisted
 
@@ -59,7 +81,7 @@ Frontend workspace reloads publish the new snapshot only after all required read
 
 ## Seed data and local files
 
-`Infrastructure/Seeding/DemoData.cs` is retained because disposable tests and explicit development database initialization need fixtures. It is only called during migration/bootstrap of an empty database when development seeding is enabled. Runtime pages read the imported relational rows, not this file. Existing demonstration people remain in PostgreSQL.
+`Data/Seeding/DemoData.cs` is retained because disposable tests and explicit development database initialization need fixtures. It is only called during migration/bootstrap of an empty database when development seeding is enabled. Runtime pages read the imported relational rows, not this file. Existing demonstration people remain in PostgreSQL.
 
 The obsolete `App_Data/hospitalflow.json` snapshot has been moved to the private, Git-ignored `.local/archive/legacy-json/` directory. The unused in-memory `Workflows` command engine was removed. OS metadata and Python bytecode caches were removed; future caches remain ignored.
 
@@ -70,10 +92,13 @@ The obsolete `App_Data/hospitalflow.json` snapshot has been moved to the private
 Run from the repository root:
 
 ```sh
-dotnet build HospitalFlow --no-restore
+dotnet build HospitalFlow.csproj --no-restore
 node tests/frontend_workspaces.cjs
 node tests/frontend_persistence.cjs
+python3 tests/version_release.py
 python3 tests/postgres.py
 ```
 
 The PostgreSQL suite uses a disposable cluster, exercises persisted workflows and verifies sessions and payment idempotency across process restarts. It does not reset the installed database. Static assets are checked through the running test application after layout changes.
+
+`VERSION`, `release.json` and `.githooks/pre-commit` maintain build/release identity. The version manifest is included in output; the running release history is stored in PostgreSQL. See [billing, calendar and versioning](BILLING_CALENDAR_VERSIONING.md).

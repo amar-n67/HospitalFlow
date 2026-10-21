@@ -90,7 +90,7 @@ ASP.NET's account-confirmation/recovery guidance is documented by [Microsoft](ht
 
 ## Verification and remaining production work
 
-`dotnet build HospitalFlow --no-restore`, JavaScript syntax checks and `python3 tests/postgres.py --schema-installer` pass. Disposable tests cover unverified login denial, approval, signup role escalation attempts, permissions, Developer full access, admin-only operations, session revocation, generic recovery responses, token replay, encrypted queued messages and private-file delivery, alongside the existing clinical/financial/inventory tests. The installed database passes all integrity checks after the upgrade.
+`dotnet build HospitalFlow.csproj --no-restore`, JavaScript syntax checks and `python3 tests/postgres.py --schema-installer` pass. Disposable tests cover unverified login denial, approval, signup role escalation attempts, permissions, Developer full access, admin-only operations, session revocation, generic recovery responses, token replay, encrypted queued messages and private-file delivery, alongside the existing clinical/financial/inventory tests. The installed database passes all integrity checks after the upgrade.
 
 The local instance remains Development over loopback HTTP. Real deployment still requires SMTP delivery verification, HTTPS hosting, MFA/account recovery policy, measured load/pagination, narrower institutional record access where required, monitored always-on services and independent log/backup retention. Full application access does not mean that a local build is certified for hospital production use.
 

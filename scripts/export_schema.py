@@ -2,7 +2,7 @@
 """Generate a password-free, schema-only SQL installer for a NEW empty database."""
 import hashlib
 from local_database_tools import ROOT
-files=sorted((ROOT/'HospitalFlow/Database/Migrations').glob('*.sql'))
+files=sorted((ROOT/'Database/Migrations').glob('*.sql'))
 text='''-- HospitalFlow schema-only installer. Generated; edit numbered migrations, then regenerate.
 -- Run only in a NEW EMPTY PostgreSQL 17 database as its migration owner.
 -- This does not contain passwords, patient data, or application bootstrap accounts.
@@ -18,5 +18,5 @@ for file in files:
  name='HospitalFlow.Database.Migrations.'+file.name
  text+="INSERT INTO hospitalflow.schema_versions(version,checksum) VALUES('"+name+"','"+hashlib.sha256(file.read_bytes()).hexdigest().upper()+"');\n"
 text+='COMMIT;\n-- Provision the restricted application login separately; no password is embedded here.\n'
-path=ROOT/'HospitalFlow/Database/hospitalflow_schema.sql';path.write_text(text)
+path=ROOT/'Database/hospitalflow_schema.sql';path.write_text(text)
 print('Schema-only installer generated:',path)

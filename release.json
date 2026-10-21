@@ -1,0 +1,11 @@
+{
+  "version": "1.0.1",
+  "releases": [
+    {
+      "version": "1.0.1",
+      "releasedAt": "2026-10-21T14:16:25.538377+00:00",
+      "sourceParent": "f01f55e5cb7121ccd37ac5910367951bc26f55f1",
+      "notes": "Updated: .dockerignore, .githooks/pre-commit, .vscode/launch.json, .vscode/tasks.json, Controllers/AccountEndpoints.cs, Controllers/ApplicationEndpoints.cs, Controllers/BookingEndpoints.cs, Controllers/CareFlowEndpoints.cs, Controllers/EnterpriseFinanceEndpoints.cs, Controllers/EnterpriseOperations.cs, Controllers/HospitalNetworkEndpoints.cs, Controllers/MedicationCareEndpoints.cs, Controllers/PatientEndpoints.cs, Controllers/PeopleEndpoints.cs, Controllers/RecordDocumentEndpoints.cs, Controllers/WorkspaceEndpoints.cs, Data/DbSecurity.cs, Data/RowMap.cs, Data/Seeding/DemoData.cs, Data/Store.cs"
+    }
+  ]
+}

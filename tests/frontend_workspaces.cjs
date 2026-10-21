@@ -1,8 +1,8 @@
 const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/strict');
-const asset=file=>'HospitalFlow/wwwroot/js/'+(['app.js','dialogs.js','theme.js','validation.js'].includes(file)?'core/':'features/')+file;
+const asset=file=>'wwwroot/js/'+(['app.js','dialogs.js','theme.js','validation.js'].includes(file)?'core/':'features/')+file;
 const ctx={console,URL,Blob,setInterval:()=>{},document:{addEventListener(){},querySelectorAll:()=>[]},me:{},state:{},page:'dashboard',menus:[]};
 vm.createContext(ctx);
-for(const file of ['medications.js','validation.js','workspaces.js','documents.js','overview.js'])vm.runInContext(fs.readFileSync(asset(file),'utf8'),ctx);
+for(const file of ['enterprise.js','medications.js','validation.js','workspaces.js','documents.js','overview.js'])vm.runInContext(fs.readFileSync(asset(file),'utf8'),ctx);
 vm.runInContext(`
 var esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 var stats=rows=>rows.map(r=>r.join(' ')).join(' '),panel=(a,b,c,d='')=>a+b+c+d,table=(h,r)=>h.join(' ')+r.flat().join(' '),heading=(a,b)=>a+b;
@@ -93,3 +93,20 @@ const doctorCare=vm.runInContext('careFlowPage()',ctx);assert.match(doctorCare,/
 vm.runInContext("me={id:'nurse',role:'Nurse',permissions:['Nurse']}",ctx);const nurseCare=vm.runInContext('careFlowPage()',ctx);assert.match(nurseCare,/Accept patient/);assert.doesNotMatch(nurseCare,/Request \/ link admission/);
 vm.runInContext("me={id:'user',role:'User',patientId:'p',permissions:[]}",ctx);const patientCare=vm.runInContext('careFlowPage()',ctx);assert.match(patientCare,/My care timeline/);assert.match(patientCare,/Date-wise charges/);assert.doesNotMatch(patientCare,/Request \/ link admission|Accept patient|Configure daily ward rates/);
 console.log('PASS: complete care page renders role-specific admission controls, patient timeline/charges and escaped clinical content.');
+vm.runInContext(`
+me={id:'patient-user',role:'User',patientId:'p',permissions:[]};
+state.finance={paymentMode:'Test',data:{invoices:[{id:'INV-P',patient_id:'p',patient_name:'<Patient>',patient_code:'P-1',gross:1000,discount:100,credits:120,total:880,paid:400,balance:480}],medicines:[{patient_id:'p',medicine:'<Medicine>',quantity:2,unit_price:100,amount:200,invoice:'INV-P',status:'Dispensed'}],prices:[]}};
+`,ctx);
+const finances=vm.runInContext("financialPanel('p')",ctx);assert.match(finances,/Pay via portal \(TEST\)/);assert.match(finances,/Total discounts/);assert.match(finances,/&lt;Medicine&gt;/);assert.doesNotMatch(finances,/Apply discount/);
+vm.runInContext("me={role:'Nurse',permissions:['Nurse']}",ctx);assert.doesNotMatch(vm.runInContext("financialPanel('p')",ctx),/Pay via portal|Apply discount/);
+vm.runInContext(`
+me={role:'Admin'};state.yearCalendar={year:2028,holidays:[{id:'h',name:'<Festival>',day:'2028-02-29',kind:'Regional',is_leave:true,on_date:'2028-02-29'}],leaves:[{name:'<Nurse>',startsOn:'2028-02-28',endsOn:'2028-03-01'}]};
+`,ctx);
+const calendarHtml=vm.runInContext('annualCalendarPage()',ctx);assert.equal((calendarHtml.match(/data-calendar-day=/g)||[]).length,366);assert.match(calendarHtml,/2028-02-29/);assert.match(calendarHtml,/&lt;Festival&gt;/);assert.match(calendarHtml,/Edit policy/);
+accessCtx.me={role:'Doctor',permissions:['Doctor']};assert.equal(vm.runInContext("pageAccess('versions')",accessCtx),false);accessCtx.me={role:'Admin'};assert.equal(vm.runInContext("pageAccess('versions')",accessCtx),true);
+console.log('PASS: transparent patient/clinical invoice controls, discounts, escaped medicine names, leap-year calendar and Admin-only version navigation.');
+
+vm.runInContext("me={role:'Doctor',permissions:['Doctor']}",ctx);assert.match(vm.runInContext("financialPanel('p')",ctx),/Apply discount/);
+vm.runInContext("me={role:'User',permissions:['Pharmacist']};state.finance.data.invoices[0].gross=200",ctx);assert.match(vm.runInContext("financialPanel('p')",ctx),/Apply discount/);
+vm.runInContext("me={role:'User',patientId:'p',permissions:[]}",ctx);assert.match(vm.runInContext("financialPanel('p')",ctx),/Pay total outstanding/);assert.match(vm.runInContext("patientChargeCell('p')",ctx),/Due/);
+console.log('PASS: patient row balances, scoped Doctor/Pharmacy discount controls and total payment action.');

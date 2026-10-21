@@ -29,7 +29,7 @@ if args.command=='setup':
     private(CONFIG,json.dumps(settings,indent=2))
     sql=f"CREATE ROLE hospitalflow_app LOGIN PASSWORD '{runtime}';\nCREATE DATABASE hospitalflow OWNER hospitalflow_owner;\nREVOKE ALL ON DATABASE hospitalflow FROM PUBLIC;\nGRANT CONNECT,TEMP ON DATABASE hospitalflow TO hospitalflow_app;\n"
     run([tool('psql'),'-X','-w','-h','127.0.0.1','-p',str(port),'-U','hospitalflow_owner','-d','postgres','-v','ON_ERROR_STOP=1'],input=sql,text=True,env={**os.environ,'PGPASSWORD':owner},stdout=subprocess.DEVNULL)
-    private(ROOT/'HospitalFlow/appsettings.Local.json',json.dumps({'ConnectionStrings':{'HospitalFlow':f'Host=127.0.0.1;Port={port};Database=hospitalflow;Username=hospitalflow_app;Password={runtime};SSL Mode=Disable;Include Error Detail=false'},'Database':{'SeedDemo':False}},indent=2))
+    private(ROOT/'appsettings.Local.json',json.dumps({'ConnectionStrings':{'HospitalFlow':f'Host=127.0.0.1;Port={port};Database=hospitalflow;Username=hospitalflow_app;Password={runtime};SSL Mode=Disable;Include Error Detail=false'},'Database':{'SeedDemo':False}},indent=2))
     print(f'Dedicated HospitalFlow database created on 127.0.0.1:{port}. Credentials stored in ignored, owner-readable local configuration files.')
 else:
     if not CONFIG.exists():raise SystemExit('Run setup first.')
@@ -46,10 +46,10 @@ else:
     if args.command=='migrate':
         connection=f"Host={conf['host']};Port={conf['port']};Database={conf['database']};Username={conf.get('owner_user','hospitalflow_owner')};Password={conf['owner_password']}"
         env={**os.environ,'ConnectionStrings__HospitalFlow':connection,'ASPNETCORE_ENVIRONMENT':'Development'}
-        command=['dotnet','run','--project',str(ROOT/'HospitalFlow'),'--no-build','--no-restore','--no-launch-profile','--','--migrate']
+        command=['dotnet','run','--project',str(ROOT),'--no-build','--no-restore','--no-launch-profile','--','--migrate']
         if args.import_legacy:command+=['--import-legacy',str(pathlib.Path(args.import_legacy).resolve())]
         run(command,env=env)
         # The application cannot create/alter schema or change ledgers. Trigger functions are narrowly scoped SECURITY DEFINER.
-        sql=(ROOT/'HospitalFlow/Database/grant_operations.sql').read_text()+'\n'+(ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text()
+        sql=(ROOT/'Database/grant_operations.sql').read_text()+'\n'+(ROOT/'Database/grant_runtime.sql').read_text()
         run([tool('psql'),'-X','-w','-h',conf['host'],'-p',str(conf['port']),'-U',conf.get('owner_user','hospitalflow_owner'),'-d',conf['database'],'-v','ON_ERROR_STOP=1'],input=sql,text=True,env={**os.environ,'PGPASSWORD':conf['owner_password']},stdout=subprocess.DEVNULL)
         print('Migration complete. Runtime account has no schema ownership or ledger update/delete privileges.')

@@ -1,0 +1,8 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {"label":"HospitalFlow: build","type":"process","command":"dotnet","args":["build","${workspaceFolder}/HospitalFlow.csproj"],"group":{"kind":"build","isDefault":true},"problemMatcher":"$msCompile"},
+    {"label":"HospitalFlow: run","type":"process","command":"${workspaceFolder}/hospitalflow","args":["run"],"problemMatcher":[]},
+    {"label":"HospitalFlow: test","type":"process","command":"${workspaceFolder}/hospitalflow","args":["test"],"group":"test","problemMatcher":[]}
+  ]
+}

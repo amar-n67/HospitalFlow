@@ -7,7 +7,7 @@ HospitalFlow now uses your existing PostgreSQL 17 server at `localhost:5432`, da
 Credentials are in ignored owner-readable local files. The helper checks this externally managed server's readiness but will not start or stop it. The former port-55432 cluster and its rollback configuration are retained; it is no longer the application's database.
 ```sh
 python3 scripts/local_database.py start
-dotnet run --project HospitalFlow --launch-profile http
+dotnet run --project HospitalFlow.csproj --launch-profile http
 ```
 
 To apply future migrations to this database:
@@ -33,7 +33,7 @@ Run migrations as a one-off deployment job using the owner connection. On an emp
 dotnet HospitalFlow.dll --migrate
 ```
 
-Then apply `HospitalFlow/Database/grant_operations.sql` and `HospitalFlow/Database/grant_runtime.sql` as the database owner, adapting its `hospitalflow_app` role name if needed. Remove owner and bootstrap secrets from the web process. Demo seeding is refused outside Development. No default password is generated for a fresh production database.
+Then apply `Database/grant_operations.sql` and `Database/grant_runtime.sql` as the database owner, adapting its `hospitalflow_app` role name if needed. Remove owner and bootstrap secrets from the web process. Demo seeding is refused outside Development. No default password is generated for a fresh production database.
 
 ## Runtime settings
 

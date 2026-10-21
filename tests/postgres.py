@@ -18,12 +18,12 @@ if __name__=='__main__':
             result=subprocess.run([tool('psql'),'-X','-w','-h','127.0.0.1','-p',str(dbport),'-U',user,'-d',database,'-v','ON_ERROR_STOP=1','-At'],input=text,text=True,capture_output=True)
             assert (result.returncode==0)==ok,result.stderr
             return result.stdout.strip()
-        dll=str(ROOT/'HospitalFlow/bin/Debug/net10.0/HospitalFlow.dll')
+        dll=str(ROOT/'bin/Debug/net10.0/HospitalFlow.dll')
         owner=f'Host=127.0.0.1;Port={dbport};Database=postgres;Username=hospitalflow_owner;Pooling=false'
         env={**os.environ,'HOSPITALFLOW_ADMIN_PASSWORD':PASSWORD,'ASPNETCORE_ENVIRONMENT':'Development','ConnectionStrings__HospitalFlow':owner,'Database__SeedDemo':'true','Mail__PickupDirectory':folder+'/mail','Sms__PickupDirectory':folder+'/sms'}
         def launch(url,environment,tls_context=None):
             log=open(folder+f'/app-{len(processes)}.log','w+')
-            p=subprocess.Popen(['dotnet',dll,'--urls',url,'--contentRoot',str(ROOT/'HospitalFlow')],env=environment,stdout=log,stderr=subprocess.STDOUT);processes.append((p,log))
+            p=subprocess.Popen(['dotnet',dll,'--urls',url,'--contentRoot',str(ROOT)],env=environment,stdout=log,stderr=subprocess.STDOUT);processes.append((p,log))
             for _ in range(200):
                 try:Client(url,tls_context).request('/api/health');return p
                 except Exception:
@@ -33,12 +33,12 @@ if __name__=='__main__':
             raise RuntimeError('Timed out starting application')
         try:
             if '--schema-installer' in sys.argv:
-                sql((ROOT/'HospitalFlow/Database/hospitalflow_schema.sql').read_text())
+                sql((ROOT/'Database/hospitalflow_schema.sql').read_text())
             for _ in range(2):
-                migrate=subprocess.run(['dotnet',dll,'--contentRoot',str(ROOT/'HospitalFlow'),'--migrate'],env=env,text=True,capture_output=True)
+                migrate=subprocess.run(['dotnet',dll,'--contentRoot',str(ROOT),'--migrate'],env=env,text=True,capture_output=True)
                 assert migrate.returncode==0,migrate.stdout+migrate.stderr
             sql('CREATE ROLE hospitalflow_app LOGIN;')
-            sql((ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text())
+            sql((ROOT/'Database/grant_runtime.sql').read_text())
             runtime=owner.replace('Username=hospitalflow_owner','Username=hospitalflow_app')
             runtime_env={**env,'ConnectionStrings__HospitalFlow':runtime,'Database__SeedDemo':'false'}
             p=launch(base,runtime_env)
@@ -46,8 +46,8 @@ if __name__=='__main__':
             import re, urllib.request
             with urllib.request.urlopen(base+'/') as response:
                 shell=response.read().decode()
-            assets=re.findall(r'(?:src|href)="(/(?:js|css)/[^"?#]+)"',shell)
-            assert len(set(assets))==15,assets
+            assets=re.findall(r'(?:src|href)="(/(?:js|css)/[^"#]+)"',shell)
+            assert len(set(assets))==16,assets
             for asset in assets:
                 with urllib.request.urlopen(base+asset) as response:
                     assert response.status==200 and response.read(),asset
@@ -63,6 +63,8 @@ if __name__=='__main__':
                 fixture.request('/api/admin/account',{'id':uid,'role':'User','active':True,'permissions':['Pharmacist']})
                 from care_flow import check_care_flow
                 check_care_flow(base,sql,Client)
+                from enterprise_finance import check_enterprise_finance
+                check_enterprise_finance(base,sql,Client)
                 sys.exit(0)
             run(base)
             c=Client(base);c.login()
@@ -70,7 +72,7 @@ if __name__=='__main__':
             tables=sql("SELECT count(*) FROM information_schema.tables WHERE table_schema='hospitalflow' AND table_type='BASE TABLE';")
             assert int(tables)>=24,tables
             assert sql('SELECT count(*) FROM hospitalflow.patients;')=='9'
-            assert int(sql('SELECT count(*) FROM hospitalflow.schema_versions;'))==len(list((ROOT/'HospitalFlow/Database/Migrations').glob('*.sql')))
+            assert int(sql('SELECT count(*) FROM hospitalflow.schema_versions;'))==len(list((ROOT/'Database/Migrations').glob('*.sql')))
             assert int(sql('SELECT count(*) FROM hospitalflow.bed_assignments;'))>=6
             assert sql("SELECT count(*) FROM hospitalflow.medicine_batches m WHERE quantity<>(SELECT sum(quantity) FROM hospitalflow.stock_movements WHERE medicine_id=m.id);")=='0'
             # Runtime cannot alter schemas, logs, posted charges or payments.
@@ -120,7 +122,7 @@ if __name__=='__main__':
             subprocess.run([tool('pg_dump'),'-h','127.0.0.1','-p',str(dbport),'-U','hospitalflow_owner','-d','postgres','-Fc','--no-owner','--no-acl','-f',dump],check=True)
             sql('CREATE DATABASE hospitalflow_recovery;')
             subprocess.run([tool('pg_restore'),'-h','127.0.0.1','-p',str(dbport),'-U','hospitalflow_owner','-d','hospitalflow_recovery','--no-owner','--no-acl','--exit-on-error',dump],check=True)
-            sql((ROOT/'HospitalFlow/Database/grant_operations.sql').read_text()+'\n'+(ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text(),database='hospitalflow_recovery')
+            sql((ROOT/'Database/grant_operations.sql').read_text()+'\n'+(ROOT/'Database/grant_runtime.sql').read_text(),database='hospitalflow_recovery')
             assert sql('SELECT count(*) FROM hospitalflow.patients;',database='hospitalflow_recovery')=='9'
             assert sql("SELECT count(*) FROM hf_ops.validate_database() WHERE severity='Error' AND violations>0;",database='hospitalflow_recovery')=='0'
             assert sql("SELECT count(*) FROM hospitalflow.medicine_batches m WHERE quantity<>(SELECT sum(quantity) FROM hospitalflow.stock_movements WHERE medicine_id=m.id);",database='hospitalflow_recovery')=='0'
@@ -154,6 +156,8 @@ if __name__=='__main__':
             check_visit_prescriptions(base,sql,Client)
             from care_flow import check_care_flow
             check_care_flow(base,sql,Client)
+            from enterprise_finance import check_enterprise_finance
+            check_enterprise_finance(base,sql,Client)
             # Disable user invalidates existing database session immediately.
             receptionist=Client(base);receptionist.login('reception')
             rid=next(u['id'] for u in c.request('/api/state')['users'] if 'Reception' in u['permissions'] and u['name']=='Reception Demo')
@@ -173,9 +177,9 @@ if __name__=='__main__':
             sql('CREATE DATABASE hospitalflow_production_test;')
             prod_owner=owner.replace('Database=postgres','Database=hospitalflow_production_test')
             prod_env={**env,'ASPNETCORE_ENVIRONMENT':'Production','ConnectionStrings__HospitalFlow':prod_owner,'Database__SeedDemo':'false','Bootstrap__Email':'administrator@hospitalflow.local','Bootstrap__Password':PASSWORD,'Accounts__PublicOrigin':'https://localhost','Mail__Smtp__Host':'127.0.0.1','Mail__From':'noreply@example.test'}
-            migration=subprocess.run(['dotnet',dll,'--contentRoot',str(ROOT/'HospitalFlow'),'--migrate'],env=prod_env,capture_output=True,text=True)
+            migration=subprocess.run(['dotnet',dll,'--contentRoot',str(ROOT),'--migrate'],env=prod_env,capture_output=True,text=True)
             assert migration.returncode==0,migration.stderr
-            sql((ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text(),database='hospitalflow_production_test')
+            sql((ROOT/'Database/grant_runtime.sql').read_text(),database='hospitalflow_production_test')
             prod_runtime=prod_owner.replace('Username=hospitalflow_owner','Username=hospitalflow_app')
             runtime_prod={**prod_env,'Payments__Mode':'Test','ConnectionStrings__HospitalFlow':prod_runtime,'Security__KeyEncryptionCertificate':pfx,'Security__KeyEncryptionCertificatePassword':cert_env['HF_TEST_PFX_PASSWORD'],'Kestrel__Certificates__Default__Path':pfx,'Kestrel__Certificates__Default__Password':cert_env['HF_TEST_PFX_PASSWORD']}
             prod_url=f'https://127.0.0.1:{port()}';tls_context=ssl.create_default_context(cafile=cert)
@@ -187,7 +191,7 @@ if __name__=='__main__':
             assert len(prod.request('/api/state')['users'])==1
             assert sql("SELECT bool_and(xml LIKE '%encryptedSecret%') FROM hospitalflow.data_protection_keys;",database='hospitalflow_production_test')=='t'
             without_certificate={**prod_env,'ConnectionStrings__HospitalFlow':prod_runtime}
-            refused=subprocess.run(['dotnet',dll,'--contentRoot',str(ROOT/'HospitalFlow')],env=without_certificate,capture_output=True,text=True)
+            refused=subprocess.run(['dotnet',dll,'--contentRoot',str(ROOT)],env=without_certificate,capture_output=True,text=True)
             assert refused.returncode!=0 and 'Production requires' in refused.stderr
             print('PASS: fresh Production bootstrap, HTTPS with validated test certificate, Secure session cookie, encrypted database-held keys, no demo data and missing-certificate startup refusal.')
             print('PASS: normalized tables, repeatable migrations, limited runtime grants, immutable ledgers, FK/check/deferred constraints, stock reconciliation, durable bed history, cross-instance payment idempotency, persisted sessions, notifications, access/rejection logging, user revocation password changes, patient updates, bed creation and backup/restore.')

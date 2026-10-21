@@ -8,7 +8,7 @@ def query(statement):
  if r.returncode:raise RuntimeError(r.stderr)
  return r.stdout.strip()
 versions=json.loads(query("SELECT json_object_agg(version,checksum) FROM hospitalflow.schema_versions;"))
-for path in sorted((ROOT/'HospitalFlow/Database/Migrations').glob('*.sql')):
+for path in sorted((ROOT/'Database/Migrations').glob('*.sql')):
  matches=[value for name,value in versions.items() if name.endswith('.'+path.name)]
  if matches!=[hashlib.sha256(path.read_bytes()).hexdigest().upper()]:raise RuntimeError('Migration missing or checksum differs: '+path.name)
 checks=json.loads(query("SELECT json_agg(c) FROM hf_ops.validate_database()c;"))

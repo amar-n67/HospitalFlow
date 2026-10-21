@@ -1,0 +1,1 @@
+record PersonEntry(string Id,string RegistrationId,string Name,string Email,string Role,string? PatientId,string? DoctorId,string? Mobile,string? Dob,string? Sex,string? Address,string? Department,string? JobTitle,string? Occupation,bool Active);

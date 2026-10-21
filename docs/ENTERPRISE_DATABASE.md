@@ -100,9 +100,9 @@ python3 scripts/backup_database.py
 python3 scripts/restore_drill.py
 ```
 
-Dumps exclude owner/ACLs intentionally. After restoring into an empty recovery database, apply **both** `HospitalFlow/Database/grant_operations.sql` and `HospitalFlow/Database/grant_runtime.sql`, with correctly provisioned environment roles. Validate encryption-key certificates and isolated application access before a recovery cutover. Production still needs encrypted off-host backups, retention, WAL/PITR where required and measured recovery objectives.
+Dumps exclude owner/ACLs intentionally. After restoring into an empty recovery database, apply **both** `Database/grant_operations.sql` and `Database/grant_runtime.sql`, with correctly provisioned environment roles. Validate encryption-key certificates and isolated application access before a recovery cutover. Production still needs encrypted off-host backups, retention, WAL/PITR where required and measured recovery objectives.
 
-The [schema-only installer](../HospitalFlow/Database/hospitalflow_schema.sql) is for a **new empty database**, not a script to rerun over this installation. Normal upgrades use the embedded migrations and `scripts/local_database.py migrate`. A fresh schema installation also requires application bootstrap, protected runtime/HMAC configuration and role grants as described in [deployment](DEPLOYMENT.md).
+The [schema-only installer](../Database/hospitalflow_schema.sql) is for a **new empty database**, not a script to rerun over this installation. Normal upgrades use the embedded migrations and `scripts/local_database.py migrate`. A fresh schema installation also requires application bootstrap, protected runtime/HMAC configuration and role grants as described in [deployment](DEPLOYMENT.md).
 
 Verification completed: .NET build; disposable database/API/concurrency/security tests; native command acceptance tests; production certificate/startup checks; generated SQL installer tests; live migration checksum/integrity verification; preservation comparison; and a real backup restore. The live verification reports zero violations for all 13 error checks and all three operational evidence warnings.
 

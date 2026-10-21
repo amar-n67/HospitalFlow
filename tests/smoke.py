@@ -14,7 +14,7 @@ class Client:
         headers={'Content-Type':'application/json'}
         if header:headers['X-HospitalFlow']='1'
         if getattr(self,'hospital',None):headers['X-HospitalFlow-Hospital']=self.hospital
-        if path.startswith('/api/actions/') or path.startswith('/api/people/') or path=='/api/network/referrals' or path=='/api/care/medications/provide' or path=='/api/care/prescribe-visit' or path.startswith('/api/care/flow/'):headers['Idempotency-Key']=key or str(uuid.uuid4())
+        if path.startswith('/api/actions/') or path.startswith('/api/people/') or path=='/api/network/referrals' or path=='/api/care/medications/provide' or path=='/api/care/prescribe-visit' or path.startswith('/api/care/flow/') or path.startswith('/api/enterprise/'):headers['Idempotency-Key']=key or str(uuid.uuid4())
         req=urllib.request.Request(self.base+path,data=None if data is None else json.dumps(data).encode(),headers=headers)
         try:
             with self.http.open(req) as r: status=r.status; raw=r.read()

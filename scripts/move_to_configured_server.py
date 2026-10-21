@@ -24,12 +24,12 @@ backup=local/'backups'/f'hospitalflow-before-5432-{stamp}.dump';backup.parent.mk
 private(backup,'')
 subprocess.run([tool('pg_dump'),'-h',source['host'],'-p',str(source['port']),'-U',source.get('owner_user','hospitalflow_owner'),'-d',source['database'],'-Fc','--schema=hospitalflow','--no-owner','--no-acl','-f',str(backup)],check=True,env={**os.environ,'PGPASSWORD':source['owner_password']})
 private(local/'database-55432.json',json.dumps(source,indent=2))
-private(local/'appsettings-55432.json',(ROOT/'HospitalFlow/appsettings.Local.json').read_text())
+private(local/'appsettings-55432.json',(ROOT/'appsettings.Local.json').read_text())
 runtime=secrets.token_hex(32)
 sql(target,f"CREATE ROLE hospitalflow_app LOGIN PASSWORD '{runtime}'; CREATE DATABASE hospitalflow OWNER postgres;",'postgres')
 subprocess.run([tool('pg_restore'),'-h',target['host'],'-p',str(target['port']),'-U',target['owner_user'],'-d',name,'--single-transaction','--no-owner','--no-acl','--exit-on-error',str(backup)],check=True,env={**os.environ,'PGPASSWORD':target['owner_password'],'PGGSSENCMODE':'disable'})
 sql(target,'REVOKE ALL ON DATABASE hospitalflow FROM PUBLIC; GRANT CONNECT,TEMP ON DATABASE hospitalflow TO hospitalflow_app;',name)
-sql(target,(ROOT/'HospitalFlow/Database/grant_runtime.sql').read_text())
+sql(target,(ROOT/'Database/grant_runtime.sql').read_text())
 # Compare every table, including sessions, keys, history and inventory, before switching connections.
 tables=sql(source,"SELECT tablename FROM pg_tables WHERE schemaname='hospitalflow' ORDER BY tablename;").splitlines()
 report={}
@@ -43,7 +43,7 @@ for table in tables:
 sql(target,'SELECT count(*) FROM hospitalflow.medicine_batches;',user='hospitalflow_app',password=runtime)
 target.update(runtime_user='hospitalflow_app',runtime_password=runtime,managed_cluster=False)
 config={'ConnectionStrings':{'HospitalFlow':f"Host={target['host']};Port={target['port']};Database={name};Username=hospitalflow_app;Password={runtime};SSL Mode=Disable;Include Error Detail=false"},'Database':{'SeedDemo':False}}
-private(ROOT/'HospitalFlow/appsettings.Local.json',json.dumps(config,indent=2))
+private(ROOT/'appsettings.Local.json',json.dumps(config,indent=2))
 private(local/'database.json',json.dumps(target,indent=2))
 private(local/'migration-to-5432-report.json',json.dumps({'host':target['host'],'port':target['port'],'database':name,'tables':report,'backup':str(backup)},indent=2))
 print('HospitalFlow migrated to localhost:5432/hospitalflow.')
